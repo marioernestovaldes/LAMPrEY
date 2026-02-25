@@ -89,6 +89,8 @@ def home(request):
         all_runs_qs = Result.objects.select_related("raw_file__pipeline__project").filter(
             raw_file__pipeline__project__in=projects_qs
         ).defer("input_source")
+        if not (request.user.is_staff or request.user.is_superuser):
+            all_runs_qs = all_runs_qs.filter(raw_file__created_by_id=request.user.id)
 
         recent_runs_qs = (
             all_runs_qs

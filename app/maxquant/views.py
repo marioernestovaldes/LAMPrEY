@@ -62,10 +62,7 @@ def _results_for_user(user):
     queryset = Result.objects.select_related("raw_file__pipeline__project")
     if user.is_staff or user.is_superuser:
         return queryset
-    return queryset.filter(
-        Q(raw_file__pipeline__project__created_by_id=user.id)
-        | Q(raw_file__pipeline__project__users=user)
-    ).distinct()
+    return queryset.filter(raw_file__created_by_id=user.id).distinct()
 
 
 @login_required
@@ -111,6 +108,8 @@ def maxquant_pipeline_view(request, project, pipeline):
     missing_raw_files = RawFile.objects.filter(
         pipeline=pipeline, result__isnull=True
     ).order_by("-created")
+    if not (request.user.is_staff or request.user.is_superuser):
+        missing_raw_files = missing_raw_files.filter(created_by_id=request.user.id)
 
     # Adaptive queue-status strictness:
     # for small pages we allow stricter queue inspection; for larger workloads

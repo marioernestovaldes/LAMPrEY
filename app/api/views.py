@@ -18,6 +18,8 @@ from rest_framework.permissions import IsAuthenticated
 
 from django.http import JsonResponse
 from django.conf import settings
+from django.http import HttpResponseForbidden
+from django.db import models
 
 timeout = 360
 
@@ -25,16 +27,58 @@ from maxquant.models import Pipeline, Result
 from maxquant.serializers import PipelineSerializer, RawFileSerializer
 from project.models import Project
 from project.serializers import ProjectsNamesSerializer
+from user.models import User
 
 
 VERBOSE = settings.DEBUG
+
+
+def _is_admin(user):
+    return bool(user and (user.is_staff or user.is_superuser))
+
+
+def _get_request_user(request):
+    if getattr(request, "user", None) and request.user.is_authenticated:
+        return request.user
+    uid = request.data.get("uid")
+    if not uid:
+        return None
+    return User.objects.filter(uuid=uid).first()
+
+
+def _projects_for_user(user):
+    queryset = Project.objects.all()
+    if _is_admin(user):
+        return queryset
+    return queryset.filter(
+        models.Q(created_by_id=user.id) | models.Q(users=user)
+    ).distinct()
+
+
+def _pipelines_for_user(user):
+    queryset = Pipeline.objects.select_related("project")
+    if _is_admin(user):
+        return queryset
+    return queryset.filter(
+        models.Q(project__created_by_id=user.id) | models.Q(project__users=user)
+    ).distinct()
+
+
+def _results_for_user(user):
+    queryset = Result.objects.select_related("raw_file__pipeline__project")
+    if _is_admin(user):
+        return queryset
+    return queryset.filter(raw_file__created_by_id=user.id).distinct()
 
 
 class ProjectNames(generics.ListAPIView):
     filter_fields = ["name", "slug"]
 
     def post(self, request, format=None):
-        queryset = Project.objects.all()
+        user = _get_request_user(request)
+        if user is None:
+            return HttpResponseForbidden("Missing user context.")
+        queryset = _projects_for_user(user)
         serializer = ProjectsNamesSerializer(queryset, many=True)
         data = serializer.data
         return JsonResponse(data, status=201, safe=False)
@@ -42,11 +86,13 @@ class ProjectNames(generics.ListAPIView):
 
 class PipelineNames(generics.ListAPIView):
     def post(self, request, format=None):
-
+        user = _get_request_user(request)
+        if user is None:
+            return HttpResponseForbidden("Missing user context.")
         data = request.data
         project = data["project"]
 
-        queryset = Pipeline.objects.filter(project__slug=project)
+        queryset = _pipelines_for_user(user).filter(project__slug=project)
         serializer = PipelineSerializer(queryset, many=True)
         data = serializer.data
         return JsonResponse(data, status=201, safe=False)
@@ -54,13 +100,18 @@ class PipelineNames(generics.ListAPIView):
 
 class QcDataAPI(generics.ListAPIView):
     def post(self, request):
+        user = _get_request_user(request)
+        if user is None:
+            return HttpResponseForbidden("Missing user context.")
 
         data = request.data
         project_slug = data["project"]
         pipeline_slug = data["pipeline"]
         data_range = data["data_range"]
 
-        df = get_qc_data(project_slug, pipeline_slug, data_range)
+        df = get_qc_data(project_slug, pipeline_slug, data_range, user=user)
+        if df is None:
+            df = pd.DataFrame()
 
         # Ensure JSON-serializable values
         df = df.replace({np.nan: None})
@@ -83,6 +134,9 @@ class QcDataAPI(generics.ListAPIView):
 
 class ProteinNamesAPI(generics.ListAPIView):
     def post(self, request):
+        user = _get_request_user(request)
+        if user is None:
+            return HttpResponseForbidden("Missing user context.")
         data = request.data
 
         logging.warning(f"ProteinNamesAPI: {data}")
@@ -103,7 +157,9 @@ class ProteinNamesAPI(generics.ListAPIView):
             data["remove_reversed_sequences"],
         )
 
-        fns = get_protein_quant_fn(project_slug, pipeline_slug, data_range=data_range)
+        fns = get_protein_quant_fn(
+            project_slug, pipeline_slug, data_range=data_range, user=user
+        )
 
         if raw_files is not None:
             fns = [fn for fn in fns if P(fn).stem in raw_files]
@@ -148,6 +204,9 @@ def remove(df, what="contaminants"):
 class ProteinGroupsAPI(generics.ListAPIView):
     def post(self, request):
         """Returns reporter corrected intensity columns for selected proteins"""
+        user = _get_request_user(request)
+        if user is None:
+            return HttpResponseForbidden("Missing user context.")
 
         data = request.data
 
@@ -169,9 +228,15 @@ class ProteinGroupsAPI(generics.ListAPIView):
         if columns is None or protein_names is None:
             return HttpResponse("alive")
 
-        fns = get_protein_quant_fn(project_slug, pipeline_slug, data_range=data_range)
+        fns = get_protein_quant_fn(
+            project_slug, pipeline_slug, data_range=data_range, user=user
+        )
+        if len(fns) == 0:
+            return JsonResponse(pd.DataFrame().to_json(), safe=False)
         if raw_files is not None:
             fns = [fn for fn in fns if P(fn).stem in raw_files]
+            if len(fns) == 0:
+                return JsonResponse(pd.DataFrame().to_json(), safe=False)
 
         if "Reporter intensity corrected" in columns:
             df = pd.read_parquet(fns[0])
@@ -224,13 +289,16 @@ def get_protein_quant_fn(
     project_slug,
     pipeline_slug,
     data_range,
+    user,
     only_use_downstream=False,
     raw_files=None,
 ):
-    pipeline = Pipeline.objects.select_related('project').get(
+    pipeline = _pipelines_for_user(user).filter(
         project__slug=project_slug, slug=pipeline_slug
-    )
-    results = Result.objects.select_related('raw_file').filter(raw_file__pipeline=pipeline)
+    ).first()
+    if pipeline is None:
+        return []
+    results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
 
     if only_use_downstream:
         results = results.filter(raw_file__use_downstream=True)
@@ -266,10 +334,13 @@ def get_protein_groups_data(
     df["RawFile"] = df["RawFile"].apply(lambda x: P(x).stem)
     return df
 
-
-def get_qc_data(project_slug, pipeline_slug, data_range=None):
-    pipeline = Pipeline.objects.get(slug=pipeline_slug)
-    results = Result.objects.select_related('raw_file').filter(raw_file__pipeline=pipeline)
+def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
+    pipeline = _pipelines_for_user(user).filter(
+        project__slug=project_slug, slug=pipeline_slug
+    ).first()
+    if pipeline is None:
+        return pd.DataFrame()
+    results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
     n_results = len(results)
 
     if isinstance(data_range, int) and (n_results > data_range) and (n_results > 0):
@@ -295,15 +366,16 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None):
         except Exception as e:
             logging.warning(f"{e}: {result.raw_file.name} maxquant_qc_data")
 
-    rt = pd.concat(rts)
-    mq = pd.concat(mqs)
+    rt = pd.concat(rts) if len(rts) > 0 else None
+    mq = pd.concat(mqs) if len(mqs) > 0 else None
 
     del rts, mqs
 
-    try:
-        rt["Index"] = rt["DateAcquired"].rank()
-    except KeyError as e:
-        logging.error(f"{e}: {rt}")
+    if rt is not None:
+        try:
+            rt["Index"] = rt["DateAcquired"].rank()
+        except KeyError as e:
+            logging.error(f"{e}: {rt}")
 
     if (rt is None) and (mq is not None):
         return mq
@@ -343,15 +415,21 @@ class CreateFlag(generics.ListAPIView):
         pipeline_slug = data["pipeline"]
         raw_files = request.POST.getlist("raw_files")
 
-        project = Project.objects.get(slug=project_slug)
-        if user not in project.users.all():
+        project = _projects_for_user(user).filter(slug=project_slug).first()
+        if project is None or not (
+            _is_admin(user) or user in project.users.all() or project.created_by_id == user.id
+        ):
             logging.warning(
-                f"User {user.email} does not belong to project {project.name}"
+                f"User {user.email} does not belong to project {project_slug}"
             )
-            return JsonResponse({"error": "Permission denied"}, status=403)
+            return JsonResponse({"status": "Missing permissions"}, status=403)
 
-        pipeline = Pipeline.objects.get(project__slug=project_slug, slug=pipeline_slug)
-        results = Result.objects.select_related('raw_file').filter(raw_file__pipeline=pipeline)
+        pipeline = _pipelines_for_user(user).filter(
+            project__slug=project_slug, slug=pipeline_slug
+        ).first()
+        if pipeline is None:
+            return JsonResponse({"status": "Missing permissions"}, status=403)
+        results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
         for result in results:
             if result.raw_file.name in raw_files:
                 logging.warning(f"Flag {result.raw_file.name} in {pipeline.name}")
@@ -374,15 +452,21 @@ class DeleteFlag(generics.ListAPIView):
         pipeline_slug = data["pipeline"]
         raw_files = request.POST.getlist("raw_files")
 
-        project = Project.objects.get(slug=project_slug)
-        if user not in project.users.all():
+        project = _projects_for_user(user).filter(slug=project_slug).first()
+        if project is None or not (
+            _is_admin(user) or user in project.users.all() or project.created_by_id == user.id
+        ):
             logging.warning(
-                f"User {user.email} does not belong to project {project.name}"
+                f"User {user.email} does not belong to project {project_slug}"
             )
-            return JsonResponse({"error": "Permission denied"}, status=403)
+            return JsonResponse({"status": "Missing permissions"}, status=403)
 
-        pipeline = Pipeline.objects.get(project__slug=project_slug, slug=pipeline_slug)
-        results = Result.objects.select_related('raw_file').filter(raw_file__pipeline=pipeline)
+        pipeline = _pipelines_for_user(user).filter(
+            project__slug=project_slug, slug=pipeline_slug
+        ).first()
+        if pipeline is None:
+            return JsonResponse({"status": "Missing permissions"}, status=403)
+        results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
         for result in results:
             if result.raw_file.name in raw_files:
                 logging.warning(f"Un-flag {result.raw_file.name} in {pipeline.name}")
@@ -406,18 +490,23 @@ class RawFile(generics.ListAPIView):
         pipeline_slug = data["pipeline"]
         action = data["action"]
 
-        project = Project.objects.get(slug=project_slug)
-        if user not in project.users.all():
+        project = _projects_for_user(user).filter(slug=project_slug).first()
+        if project is None or not (
+            _is_admin(user) or user in project.users.all() or project.created_by_id == user.id
+        ):
             logging.warning(
-                f"User {user.email} does not belong to project {project.name}"
+                f"User {user.email} does not belong to project {project_slug}"
             )
-            return JsonResponse({"error": "Permission denied"}, status=403)
+            return JsonResponse({"status": "Missing permissions"}, status=403)
 
         raw_files = request.POST.getlist("raw_files")
 
-        pipeline = Pipeline.objects.get(project__slug=project_slug, slug=pipeline_slug)
-
-        results = Result.objects.select_related('raw_file').filter(raw_file__pipeline=pipeline)
+        pipeline = _pipelines_for_user(user).filter(
+            project__slug=project_slug, slug=pipeline_slug
+        ).first()
+        if pipeline is None:
+            return JsonResponse({"status": "Missing permissions"}, status=403)
+        results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
         for result in results:
             if result.raw_file.name in raw_files:
                 logging.warning(f"{result.raw_file.name}: {action}")

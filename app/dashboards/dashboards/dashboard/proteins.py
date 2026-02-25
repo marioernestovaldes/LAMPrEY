@@ -120,7 +120,7 @@ def callbacks(app):
         State("tabs", "value"),
         State("proteins-options", "value"),
     )
-    def refresh_proteins_table(n_clicks, project, pipeline, data, tab, options):
+    def refresh_proteins_table(n_clicks, project, pipeline, data, tab, options, **kwargs):
         if (project is None) or (pipeline is None):
             raise PreventUpdate
         if tab != "proteins":
@@ -128,6 +128,8 @@ def callbacks(app):
 
         raw_files = list(pd.DataFrame(data).RawFile.values)
 
+        user = kwargs.get("user")
+        uid = getattr(user, "uuid", None)
         df = pd.DataFrame(
             T.get_protein_names(
                 project=project,
@@ -135,6 +137,7 @@ def callbacks(app):
                 remove_contaminants="remove_contaminants" in options,
                 remove_reversed_sequences="remove_reversed_sequences" in options,
                 raw_files=raw_files,
+                uid=uid,
             )
         )
         return df.to_dict("records")
@@ -162,6 +165,7 @@ def callbacks(app):
         data_range,
         qc_data,
         derived_virtual_indices,
+        **kwargs,
     ):
         """Create the protein groups figure."""
         if (project is None) or (pipeline is None):
@@ -184,6 +188,8 @@ def callbacks(app):
 
         raw_files = list(qc_data.RawFile.values)
 
+        user = kwargs.get("user")
+        uid = getattr(user, "uuid", None)
         data = T.get_protein_groups(
             project,
             pipeline,
@@ -191,6 +197,7 @@ def callbacks(app):
             columns=[plot_column],
             data_range=data_range,
             raw_files=raw_files,
+            uid=uid,
         )
 
         df = pd.read_json(data)

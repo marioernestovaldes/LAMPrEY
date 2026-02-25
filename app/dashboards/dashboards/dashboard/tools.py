@@ -60,10 +60,17 @@ def table_from_dataframe(df, id="table", row_deletable=True, row_selectable="mul
     )
 
 
-def get_projects():
+def get_projects(uid=None):
     url = f"{URL}/api/projects"
+    payload = {}
+    if uid is not None:
+        payload["uid"] = uid
     try:
-        _json = requests.post(url).json()
+        _json = requests.post(
+            url,
+            data=json.dumps(payload),
+            headers={"Content-type": "application/json"},
+        ).json()
     except Exception:
         return []
     output = [{"label": i["name"], "value": i["slug"]} for i in _json]
@@ -71,15 +78,18 @@ def get_projects():
     return output
 
 
-def get_pipelines(project):
+def get_pipelines(project, uid=None):
     url = f"{URL}/api/pipelines"
     headers = {"Content-type": "application/json"}
-    data = json.dumps(dict(project=project))
+    payload = dict(project=project)
+    if uid is not None:
+        payload["uid"] = uid
+    data = json.dumps(payload)
     return requests.post(url, data=data, headers=headers).json()
 
 
 def get_protein_groups(
-    project, pipeline, protein_names=None, columns=None, data_range=None, raw_files=None
+    project, pipeline, protein_names=None, columns=None, data_range=None, raw_files=None, uid=None
 ):
     url = f"{URL}/api/protein-groups"
     headers = {"Content-type": "application/json"}
@@ -91,6 +101,7 @@ def get_protein_groups(
             columns=columns,
             data_range=data_range,
             raw_files=raw_files,
+            uid=uid,
         )
     )
     res = requests.post(url, data=data, headers=headers).json()
@@ -104,6 +115,7 @@ def get_protein_names(
     remove_reversed_sequences=True,
     data_range=None,
     raw_files=None,
+    uid=None,
 ):
     url = f"{URL}/api/protein-names"
     headers = {"Content-type": "application/json"}
@@ -115,16 +127,23 @@ def get_protein_names(
             remove_reversed_sequences=remove_reversed_sequences,
             data_range=data_range,
             raw_files=raw_files,
+            uid=uid,
         )
     )
     _json = requests.post(url, data=data, headers=headers).json()
     return _json
 
 
-def get_qc_data(project, pipeline, columns, data_range=None):
+def get_qc_data(project, pipeline, columns, data_range=None, uid=None):
     url = f"{URL}/api/qc-data"
     headers = {"Content-type": "application/json"}
-    payload = dict(project=project, pipeline=pipeline, columns=columns, data_range=data_range)
+    payload = dict(
+        project=project,
+        pipeline=pipeline,
+        columns=columns,
+        data_range=data_range,
+        uid=uid,
+    )
     try:
         resp = requests.post(url, data=json.dumps(payload), headers=headers, timeout=30)
         if not resp.ok:

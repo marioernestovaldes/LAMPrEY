@@ -109,8 +109,8 @@ layout = html.Div(
                                                 html.Label("Project", className="pqc-field-label"),
                                                 dcc.Dropdown(
                                                     id="project",
-                                                    options=T.get_projects(),
-                                                    value="lsarp",
+                                                    options=[],
+                                                    value=None,
                                                     className="pqc-scope-dropdown",
                                                 ),
                                             ],
@@ -301,8 +301,10 @@ def render_content(tab):
 
 
 @app.callback(Output("project", "options"), [Input("B_update", "n_clicks")])
-def populate_projects(project):
-    return T.get_projects()
+def populate_projects(project, **kwargs):
+    user = kwargs.get("user")
+    uid = getattr(user, "uuid", None)
+    return T.get_projects(uid=uid)
 
 
 @app.callback(
@@ -320,8 +322,10 @@ def pick_default_project(options, current_value):
 
 
 @app.callback(Output("pipeline", "options"), [Input("project", "value")])
-def populate_pipelines(project):
-    _json = T.get_pipelines(project)
+def populate_pipelines(project, **kwargs):
+    user = kwargs.get("user")
+    uid = getattr(user, "uuid", None)
+    _json = T.get_pipelines(project, uid=uid)
     if len(_json) == 0:
         return []
     else:
@@ -349,7 +353,7 @@ def pick_default_pipeline(options, current_value):
     Input("pipeline", "value"),
     State("qc-table-columns", "value"),
 )
-def refresh_qc_table(project, pipeline, optional_columns):
+def refresh_qc_table(project, pipeline, optional_columns, **kwargs):
 
     if (project is None) or (pipeline is None):
         return (
@@ -358,8 +362,10 @@ def refresh_qc_table(project, pipeline, optional_columns):
         )
     optional_columns = optional_columns or C.qc_columns_default
     columns = C.qc_columns_always + optional_columns
+    user = kwargs.get("user")
+    uid = getattr(user, "uuid", None)
     data = T.get_qc_data(
-        project=project, pipeline=pipeline, columns=columns, data_range=None
+        project=project, pipeline=pipeline, columns=columns, data_range=None, uid=uid
     )
 
     df = pd.DataFrame(data)

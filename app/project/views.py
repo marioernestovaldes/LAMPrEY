@@ -16,6 +16,10 @@ import csv
 import datetime
 
 
+def _is_admin(user):
+    return user.is_staff or user.is_superuser
+
+
 class ProjectListView(LoginRequiredMixin, ListView):
     model = Project
     login_url = "/accounts/login/"
@@ -33,6 +37,8 @@ class ProjectListView(LoginRequiredMixin, ListView):
                 .filter(raw_file__pipeline__project_id__in=project_ids)
                 .select_related("raw_file__pipeline__project")
             )
+            if not _is_admin(self.request.user):
+                results = results.filter(raw_file__created_by_id=self.request.user.id)
             for result in results:
                 if result.overall_status in {"queued", "running"}:
                     project_id = result.raw_file.pipeline.project_id
@@ -51,20 +57,35 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self, *args, **kwargs):
         epoch = timezone.make_aware(datetime.datetime(1970, 1, 1))
+        user = self.request.user
+        rawfile_filter = Q()
+        result_filter = Q()
+        if not _is_admin(user):
+            rawfile_filter = Q(pipeline__rawfile__created_by_id=user.id)
+            result_filter = Q(pipeline__rawfile__created_by_id=user.id)
+
         queryset = (
             Project.objects
             .annotate(
                 n_pipelines=Count("pipeline", distinct=True),
-                n_raw_files=Count("pipeline__rawfile", distinct=True),
+                n_raw_files=Count(
+                    "pipeline__rawfile",
+                    filter=rawfile_filter,
+                    distinct=True,
+                ),
                 n_members=Count("users", distinct=True),
                 project_created_at=Cast("created", output_field=DateTimeField()),
                 last_pipeline_created_at=Cast(
                     Max("pipeline__created"), output_field=DateTimeField()
                 ),
                 last_rawfile_created_at=Cast(
-                    Max("pipeline__rawfile__created"), output_field=DateTimeField()
+                    Max("pipeline__rawfile__created", filter=rawfile_filter),
+                    output_field=DateTimeField(),
                 ),
-                last_result_created_at=Max("pipeline__rawfile__result__created"),
+                last_result_created_at=Max(
+                    "pipeline__rawfile__result__created",
+                    filter=result_filter,
+                ),
             )
             .annotate(
                 last_activity=Greatest(
@@ -75,8 +96,7 @@ class ProjectListView(LoginRequiredMixin, ListView):
                 )
             )
         )
-        user = self.request.user
-        if user.is_staff or user.is_superuser:
+        if _is_admin(user):
             filtered_queryset = queryset
         else:
             filtered_queryset = queryset.filter(
@@ -115,24 +135,28 @@ class ProjectListView(LoginRequiredMixin, ListView):
 
 
 def _pipelines_queryset_for_project(
+    user,
     slug,
     search_query="",
     raw_filter="all",
     flagged_filter="all",
     downstream_filter="all",
 ):
+    rawfile_filter = Q()
+    if not _is_admin(user):
+        rawfile_filter = Q(rawfile__created_by_id=user.id)
     queryset = (
         Pipeline.objects.filter(project__slug=slug)
         .annotate(
-            n_raw_files=Count("rawfile", distinct=True),
+            n_raw_files=Count("rawfile", filter=rawfile_filter, distinct=True),
             n_downstream=Count(
                 "rawfile",
-                filter=Q(rawfile__use_downstream=True),
+                filter=Q(rawfile__use_downstream=True) & rawfile_filter,
                 distinct=True,
             ),
             n_flagged=Count(
                 "rawfile",
-                filter=Q(rawfile__flagged=True),
+                filter=Q(rawfile__flagged=True) & rawfile_filter,
                 distinct=True,
             ),
         )
@@ -178,6 +202,7 @@ def project_detail_view(request, slug):
     flagged_filter = request.GET.get("flagged", "all")
     downstream_filter = request.GET.get("downstream", "all")
     maxquant_pipelines = _pipelines_queryset_for_project(
+        request.user,
         slug,
         search_query=search_query,
         raw_filter=raw_filter,

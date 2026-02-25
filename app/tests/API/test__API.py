@@ -19,12 +19,11 @@ class ApiTestCase(TestCase):
         if not hasattr(self, "pipeline"):
             print("Setup")
             self.user = User.objects.create_user(
-                email="testuser@example.com",
+                email="api-user@example.com",
                 password="testpass123",
             )
-
             self.project = Project.objects.create(
-                name="project", description="A test project"
+                name="project", description="A test project", created_by=self.user
             )
             self.project.users.add(self.user)
 
@@ -34,20 +33,27 @@ class ApiTestCase(TestCase):
             self.pipeline = Pipeline.objects.create(
                 name="pipe",
                 project=self.project,
+                created_by=self.user,
                 fasta_file=SimpleUploadedFile("my_fasta.fasta", contents_fasta),
                 mqpar_file=SimpleUploadedFile("my_mqpar.xml", contents_mqpar),
                 rawtools_args="-p -q -x -u -l -m -r TMT11 -chro 12TB",
             )
 
             self.raw_file = RawFile.objects.create(
-                pipeline=self.pipeline, orig_file=SimpleUploadedFile("fake.raw", b"...")
+                pipeline=self.pipeline,
+                orig_file=SimpleUploadedFile("fake.raw", b"..."),
+                created_by=self.user,
             )
 
     def test__projects(self):
         c = Client()
         c.force_login(self.user)
         url = f"{URL}/api/projects"
-        actual = c.post(url).json()
+        actual = c.post(
+            url,
+            data={"uid": self.user.uuid},
+            content_type="application/json",
+        ).json()
         expected = [
             {
                 "pk": 1,
