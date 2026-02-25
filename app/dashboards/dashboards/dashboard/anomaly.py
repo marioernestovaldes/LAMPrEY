@@ -333,8 +333,13 @@ def callbacks(app):
         )
         heatmap.colorbar.tickvals = [-rng, 0, rng]
         heatmap.colorbar.ticktext = ["More normal", "0", "More anomalous"]
+        heatmap.colorbar.tickfont = dict(size=9)
+        heatmap.colorbar.title.font = dict(size=11)
 
-        fig.update_layout(font=C.figure_font)
+        base_font = dict(C.figure_font) if isinstance(C.figure_font, dict) else {}
+        fig.update_layout(font={**base_font, "size": 11})
+        fig.update_xaxes(title_font=dict(size=12))
+        fig.update_yaxes(title_font=dict(size=12), tickfont=dict(size=9))
 
         config = T.gen_figure_config(
             filename="Anomaly-Detection-Shapley-values",
