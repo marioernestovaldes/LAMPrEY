@@ -193,7 +193,7 @@ def callbacks(app):
         fig.update_layout(
             hovermode="closest",
             hoverlabel_namelength=-1,
-            height=450,
+            height=475,
             showlegend=False,
             margin=dict(l=32, r=20, b=60, t=24, pad=0),
             font=C.figure_font,

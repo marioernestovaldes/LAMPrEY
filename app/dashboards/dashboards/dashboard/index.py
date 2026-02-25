@@ -83,13 +83,25 @@ layout = html.Div(
             className="pqc-layout",
             children=[
                 html.Div(
-                    className="pqc-sidebar",
+                    className="pqc-main-grid",
                     children=[
                         html.Div(
-                            className="pqc-panel",
+                            className="pqc-panel pqc-insights-panel",
                             children=[
                                 html.Div(
-                                    className="pqc-scope-grid",
+                                    className="pqc-panel-header",
+                                    children=[
+                                        html.Div("Run Snapshot", className="pqc-panel-kicker"),
+                                        html.H3("Key Metrics", className="pqc-panel-title"),
+                                        html.Div(
+                                            "0 samples in current selection",
+                                            id="pqc-scope-subtitle",
+                                            className="pqc-scope-subtitle",
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="pqc-scope-grid pqc-scope-grid-inside",
                                     children=[
                                         html.Div(
                                             className="pqc-scope-field",
@@ -99,6 +111,7 @@ layout = html.Div(
                                                     id="project",
                                                     options=T.get_projects(),
                                                     value="lsarp",
+                                                    className="pqc-scope-dropdown",
                                                 ),
                                             ],
                                         ),
@@ -106,17 +119,83 @@ layout = html.Div(
                                             className="pqc-scope-field",
                                             children=[
                                                 html.Label("Pipeline", className="pqc-field-label"),
-                                                dcc.Dropdown(id="pipeline", options=[], value=None),
+                                                dcc.Dropdown(
+                                                    id="pipeline",
+                                                    options=[],
+                                                    value=None,
+                                                    className="pqc-scope-dropdown",
+                                                ),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="pqc-kpi-grid",
+                                    children=[
+                                        html.Div(
+                                            className="pqc-kpi-card pqc-kpi-primary",
+                                            children=[
+                                                html.Div("Samples", className="pqc-kpi-label"),
+                                                html.Div("0", id="kpi-samples", className="pqc-kpi-value"),
                                             ],
                                         ),
                                         html.Div(
-                                            className="pqc-scope-field",
+                                            className="pqc-kpi-card",
                                             children=[
-                                                html.Label("Data Range", className="pqc-field-label"),
-                                                dcc.Dropdown(
-                                                    id="data-range",
-                                                    options=C.data_range_options,
-                                                    value=300,
+                                                html.Div("Median Protein Groups", className="pqc-kpi-label"),
+                                                html.Div(
+                                                    "--",
+                                                    id="kpi-median-protein-groups",
+                                                    className="pqc-kpi-value",
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="pqc-kpi-card",
+                                            children=[
+                                                html.Div("Median Peptides", className="pqc-kpi-label"),
+                                                html.Div("--", id="kpi-median-peptides", className="pqc-kpi-value"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="pqc-kpi-card",
+                                            children=[
+                                                html.Div("Median MS/MS Identified [%]", className="pqc-kpi-label"),
+                                                html.Div("--", id="kpi-median-msms", className="pqc-kpi-value"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="pqc-kpi-card",
+                                            children=[
+                                                html.Div(
+                                                    "Median Missed Cleavages Eq1 [%]",
+                                                    className="pqc-kpi-label",
+                                                ),
+                                                html.Div(
+                                                    "--",
+                                                    id="kpi-median-missed-cleavages",
+                                                    className="pqc-kpi-value",
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="pqc-kpi-card",
+                                            children=[
+                                                html.Div("Median Oxidations [%]", className="pqc-kpi-label"),
+                                                html.Div("--", id="kpi-median-oxidations", className="pqc-kpi-value"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="pqc-kpi-card",
+                                            children=[
+                                                html.Div(
+                                                    "Median Delta m/z [ppm]",
+                                                    className="pqc-kpi-label",
+                                                ),
+                                                html.Div(
+                                                    "--",
+                                                    id="kpi-median-mz-delta",
+                                                    className="pqc-kpi-value",
                                                 ),
                                             ],
                                         ),
@@ -124,83 +203,6 @@ layout = html.Div(
                                 ),
                             ],
                         ),
-                        html.Div(
-                            className="pqc-kpi-grid",
-                            children=[
-                                html.Div(
-                                    className="pqc-kpi-card",
-                                    children=[
-                                        html.Div("Samples", className="pqc-kpi-label"),
-                                        html.Div("0", id="kpi-samples", className="pqc-kpi-value"),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-kpi-card",
-                                    children=[
-                                        html.Div("Median Protein Groups", className="pqc-kpi-label"),
-                                        html.Div(
-                                            "--",
-                                            id="kpi-median-protein-groups",
-                                            className="pqc-kpi-value",
-                                        ),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-kpi-card",
-                                    children=[
-                                        html.Div("Median Peptides", className="pqc-kpi-label"),
-                                        html.Div("--", id="kpi-median-peptides", className="pqc-kpi-value"),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-kpi-card",
-                                    children=[
-                                        html.Div("Median MS/MS Identified [%]", className="pqc-kpi-label"),
-                                        html.Div("--", id="kpi-median-msms", className="pqc-kpi-value"),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-kpi-card",
-                                    children=[
-                                        html.Div(
-                                            "Median Missed Cleavages Eq1 [%]",
-                                            className="pqc-kpi-label",
-                                        ),
-                                        html.Div(
-                                            "--",
-                                            id="kpi-median-missed-cleavages",
-                                            className="pqc-kpi-value",
-                                        ),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-kpi-card",
-                                    children=[
-                                        html.Div("Median Oxidations [%]", className="pqc-kpi-label"),
-                                        html.Div("--", id="kpi-median-oxidations", className="pqc-kpi-value"),
-                                    ],
-                                ),
-                                html.Div(
-                                    className="pqc-kpi-card",
-                                    children=[
-                                        html.Div(
-                                            "Median Delta m/z [ppm]",
-                                            className="pqc-kpi-label",
-                                        ),
-                                        html.Div(
-                                            "--",
-                                            id="kpi-median-mz-delta",
-                                            className="pqc-kpi-value",
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                    ],
-                ),
-                html.Div(
-                    className="pqc-workspace",
-                    children=[
                         html.Div(
                             className="pqc-panel pqc-workspace-panel",
                             children=[
@@ -345,10 +347,9 @@ def pick_default_pipeline(options, current_value):
     Output("qc-scope-data", "data"),
     Input("project", "value"),
     Input("pipeline", "value"),
-    Input("data-range", "value"),
     State("qc-table-columns", "value"),
 )
-def refresh_qc_table(project, pipeline, data_range, optional_columns):
+def refresh_qc_table(project, pipeline, optional_columns):
 
     if (project is None) or (pipeline is None):
         return (
@@ -358,7 +359,7 @@ def refresh_qc_table(project, pipeline, data_range, optional_columns):
     optional_columns = optional_columns or C.qc_columns_default
     columns = C.qc_columns_always + optional_columns
     data = T.get_qc_data(
-        project=project, pipeline=pipeline, columns=columns, data_range=data_range
+        project=project, pipeline=pipeline, columns=columns, data_range=None
     )
 
     df = pd.DataFrame(data)
@@ -390,14 +391,38 @@ def refresh_qc_table(project, pipeline, data_range, optional_columns):
     Output("kpi-median-missed-cleavages", "children"),
     Output("kpi-median-oxidations", "children"),
     Output("kpi-median-mz-delta", "children"),
+    Output("pqc-scope-subtitle", "children"),
     Input("qc-scope-data", "data"),
+    Input("project", "value"),
+    Input("pipeline", "value"),
 )
-def update_kpis(data):
+def update_kpis(data, project, pipeline):
+    project_label = project or "No project"
+    pipeline_label = pipeline or "No pipeline"
+
     if data is None:
-        return "0", "--", "--", "--", "--", "--", "--"
+        return (
+            "0",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            f"0 samples in {project_label} / {pipeline_label}",
+        )
     df = pd.DataFrame(data)
     if df.empty:
-        return "0", "--", "--", "--", "--", "--", "--"
+        return (
+            "0",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            f"0 samples in {project_label} / {pipeline_label}",
+        )
 
     def _median(column, suffix=""):
         if column not in df.columns:
@@ -415,6 +440,7 @@ def update_kpis(data):
         _median("N_missed_cleavages_eq_1 [%]", "%"),
         _median("Oxidations [%]", "%"),
         _median("Uncalibrated - Calibrated m/z [ppm] (ave)"),
+        f"{len(df)} samples in {project_label} / {pipeline_label}",
     )
 
 

@@ -25,69 +25,89 @@ layout = html.Div(
             className="pqc-anomaly-controls",
             children=[
                 html.Div(
-                    className="pqc-anomaly-label-row",
-                    children=[
-                        html.Div("Outlier fraction", className="pqc-field-label"),
-                        html.Div("5%", id="anomaly-fraction-value", className="pqc-anomaly-fraction-value"),
-                    ],
-                ),
-                html.Div(
-                    className="pqc-anomaly-slider-wrap",
-                    children=[
-                        dcc.Slider(
-                            id="anomaly-fraction",
-                            value=5,
-                            min=1,
-                            max=100,
-                            step=1,
-                            marks={i: {"label": f"{i}%"} for i in [1] + list(range(5, 105, 5))},
-                            tooltip={"placement": "bottom", "always_visible": False},
-                        )
-                    ],
-                ),
-                html.Div(
-                    className="pqc-anomaly-extra-controls",
+                    className="pqc-anomaly-controls-row",
                     children=[
                         html.Div(
-                            className="pqc-anomaly-control-block",
+                            className="pqc-anomaly-head",
                             children=[
-                                html.Div("Row order", className="pqc-field-label"),
-                                dcc.Dropdown(
-                                    id="anomaly-row-order",
-                                    className="pqc-anomaly-dropdown",
-                                    clearable=False,
-                                    searchable=False,
-                                    options=[
-                                        {"label": "Input order", "value": "input"},
-                                        {"label": "Most anomalous first", "value": "anomalous_first"},
-                                    ],
-                                    value="input",
+                                html.Div("Anomaly Settings", className="pqc-panel-kicker"),
+                                html.Div(
+                                    "Tune sensitivity and display options for outlier screening.",
+                                    className="pqc-anomaly-subtitle",
                                 ),
                             ],
                         ),
                         html.Div(
-                            className="pqc-anomaly-control-block",
+                            className="pqc-anomaly-slider-panel pqc-anomaly-slider-panel-inline",
                             children=[
-                                html.Div("Metrics shown", className="pqc-field-label"),
-                                dcc.Dropdown(
-                                    id="anomaly-metric-count",
-                                    className="pqc-anomaly-dropdown",
-                                    clearable=False,
-                                    searchable=False,
-                                    options=[
-                                        {"label": "10", "value": 10},
-                                        {"label": "15", "value": 15},
-                                        {"label": "20", "value": 20},
-                                        {"label": "25", "value": 25},
-                                        {"label": "30", "value": 30},
-                                        {"label": "All", "value": "all"},
+                                html.Div(
+                                    className="pqc-anomaly-label-row",
+                                    children=[
+                                        html.Div("Outlier fraction", className="pqc-field-label"),
                                     ],
-                                    value=20,
+                                ),
+                                html.Div(
+                                    className="pqc-anomaly-slider-wrap",
+                                    children=[
+                                        dcc.Slider(
+                                            id="anomaly-fraction",
+                                            value=5,
+                                            min=1,
+                                            max=100,
+                                            step=1,
+                                            marks={i: {"label": f"{i}%"} for i in [1] + list(range(5, 105, 5))},
+                                            tooltip={"placement": "bottom", "always_visible": False},
+                                        )
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            className="pqc-anomaly-extra-controls",
+                            children=[
+                                html.Div(
+                                    className="pqc-anomaly-control-block",
+                                    children=[
+                                        html.Div("Row order", className="pqc-field-label"),
+                                        dcc.Dropdown(
+                                            id="anomaly-row-order",
+                                            className="pqc-anomaly-dropdown",
+                                            clearable=False,
+                                            searchable=False,
+                                            options=[
+                                                {"label": "Input order", "value": "input"},
+                                                {"label": "Most anomalous first", "value": "anomalous_first"},
+                                            ],
+                                            value="input",
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    className="pqc-anomaly-control-block",
+                                    children=[
+                                        html.Div("Metrics shown", className="pqc-field-label"),
+                                        dcc.Dropdown(
+                                            id="anomaly-metric-count",
+                                            className="pqc-anomaly-dropdown",
+                                            clearable=False,
+                                            searchable=False,
+                                            options=[
+                                                {"label": "10", "value": 10},
+                                                {"label": "15", "value": 15},
+                                                {"label": "20", "value": 20},
+                                                {"label": "25", "value": 25},
+                                                {"label": "30", "value": 30},
+                                                {"label": "All", "value": "all"},
+                                            ],
+                                            value=20,
+                                        ),
+                                    ],
                                 ),
                             ],
                         ),
                     ],
                 ),
+                html.Div("5%", id="anomaly-fraction-value", className="pqc-hidden-trigger"),
             ],
         ),
         html.Div(
