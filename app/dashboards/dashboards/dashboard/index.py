@@ -62,6 +62,7 @@ else:
 
 timeout = 360
 
+
 protein_table_default_cols = []
 BUTTON_STYLE = {
     "padding": "6px 16px",
@@ -78,6 +79,9 @@ layout = html.Div(
     [
         dcc.Loading(dcc.Store(id="store"), type="circle"),
         dcc.Store(id="qc-scope-data"),
+        dcc.Store(id="qc-admin-session", data=False),
+        dcc.Store(id="qc-user-uid", data=None),
+        dcc.Store(id="qc-uploader-options", data=[]),
         html.Button("", id="B_update", className="pqc-hidden-trigger"),
         html.Div(
             className="pqc-layout",
@@ -124,6 +128,21 @@ layout = html.Div(
                                                     options=[],
                                                     value=None,
                                                     className="pqc-scope-dropdown",
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            id="pqc-scope-user-field",
+                                            className="pqc-scope-field",
+                                            style={"display": "block"},
+                                            children=[
+                                                html.Label("User", className="pqc-field-label"),
+                                                dcc.Dropdown(
+                                                    id="scope-uploader",
+                                                    options=[{"label": "All users", "value": "__all__"}],
+                                                    value="__all__",
+                                                    className="pqc-scope-dropdown",
+                                                    clearable=False,
                                                 ),
                                             ],
                                         ),
@@ -346,34 +365,119 @@ def pick_default_pipeline(options, current_value):
         return current_value
     return valid_values[0]
 
+
+@app.callback(
+    Output("qc-admin-session", "data"),
+    Output("qc-user-uid", "data"),
+    Input("B_update", "n_clicks"),
+    State("qc-admin-session", "data"),
+    State("qc-user-uid", "data"),
+)
+def resolve_admin_session(_n_clicks, current_admin_value, current_uid_value, **kwargs):
+    user = kwargs.get("user")
+    if user is None:
+        return bool(current_admin_value), current_uid_value
+    resolved_admin = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    resolved_uid = getattr(user, "uuid", None)
+    return (
+        resolved_admin,
+        resolved_uid,
+    )
+
+
+@app.callback(
+    Output("scope-uploader", "value"),
+    Input("scope-uploader", "options"),
+    State("scope-uploader", "value"),
+)
+def sync_scope_uploader_value(options, current_value):
+    values = {
+        opt.get("value")
+        for opt in list(options or [])
+        if isinstance(opt, dict) and opt.get("value") is not None
+    }
+    if current_value in values:
+        return current_value
+    if "__all__" in values:
+        return "__all__"
+    return None
+
 @app.callback(
     Output("qc-table-div", "children"),
     Output("qc-scope-data", "data"),
+    Output("qc-uploader-options", "data"),
+    Output("pqc-scope-user-field", "style"),
+    Output("scope-uploader", "options"),
     Input("project", "value"),
     Input("pipeline", "value"),
+    Input("scope-uploader", "value"),
     State("qc-table-columns", "value"),
+    State("qc-admin-session", "data"),
+    State("qc-user-uid", "data"),
 )
-def refresh_qc_table(project, pipeline, optional_columns, **kwargs):
+def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin_data, uid, **kwargs):
+    user = kwargs.get("user")
+    effective_uid = getattr(user, "uuid", None) or uid
+    is_admin_session = bool(admin_data)
+    if user is not None:
+        is_admin_session = bool(
+            getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+        )
 
     if (project is None) or (pipeline is None):
+        empty_options = [{"label": "All users", "value": "__all__"}]
+        scope_style = {"display": "block"} if is_admin_session else {"display": "none"}
         return (
             T.table_from_dataframe(pd.DataFrame(), id="qc-table", row_selectable="multi"),
             [],
+            empty_options,
+            scope_style,
+            empty_options,
         )
     optional_columns = optional_columns or C.qc_columns_default
     columns = C.qc_columns_always + optional_columns
-    user = kwargs.get("user")
-    uid = getattr(user, "uuid", None)
+    query_columns = list(columns)
+    if "Uploader" not in query_columns:
+        query_columns.append("Uploader")
     data = T.get_qc_data(
-        project=project, pipeline=pipeline, columns=columns, data_range=None, uid=uid
+        project=project,
+        pipeline=pipeline,
+        columns=query_columns,
+        data_range=None,
+        uid=effective_uid,
     )
+
+    if data is None:
+        data = {}
+    if isinstance(data, dict):
+        max_len = 0
+        for value in data.values():
+            if isinstance(value, (list, tuple, np.ndarray, pd.Series)):
+                max_len = max(max_len, len(value))
+        normalized = {}
+        for key, value in data.items():
+            if isinstance(value, (list, tuple, np.ndarray, pd.Series)):
+                arr = list(value)
+                if len(arr) < max_len:
+                    arr = arr + [None] * (max_len - len(arr))
+                elif len(arr) > max_len:
+                    arr = arr[:max_len]
+                normalized[key] = arr
+            else:
+                normalized[key] = [None] * max_len
+        data = normalized
 
     df = pd.DataFrame(data)
 
     if df.empty:
+        empty_options = [{"label": "All users", "value": "__all__"}]
+        scope_style = {"display": "block"} if is_admin_session else {"display": "none"}
         return (
             T.table_from_dataframe(df, id="qc-table", row_selectable="multi"),
             [],
+            empty_options,
+            scope_style,
+            empty_options,
         )
 
     # keep only columns that exist to avoid key errors
@@ -382,11 +486,116 @@ def refresh_qc_table(project, pipeline, optional_columns, **kwargs):
     if "DateAcquired" in df.columns:
         df["DateAcquired"] = pd.to_datetime(df["DateAcquired"], errors="coerce")
     df = df.replace("not detected", np.nan)
-    if len(available_cols) > 0:
-        df = df[available_cols]
+
+    uploader_options = [{"label": "All users", "value": "__all__"}]
+    seen_uploader_values = {"__all__"}
+
+    def _add_uploader_option(label, value):
+        label = str(label).strip()
+        value = str(value).strip()
+        if not label or not value:
+            return
+        if value.lower() in {"nan", "none"}:
+            return
+        if value in seen_uploader_values:
+            return
+        seen_uploader_values.add(value)
+        uploader_options.append({"label": label, "value": value})
+
+    db_uploader_by_raw = {}
+    try:
+        from maxquant.models import RawFile as RawFileModel
+        from user.models import User as UserModel
+
+        dashboard_user = user
+        if dashboard_user is None and effective_uid:
+            dashboard_user = UserModel.objects.filter(uuid=effective_uid).first()
+        dashboard_is_admin = bool(
+            dashboard_user
+            and (
+                getattr(dashboard_user, "is_staff", False)
+                or getattr(dashboard_user, "is_superuser", False)
+            )
+        )
+        allow_all_uploaders = bool(is_admin_session or dashboard_is_admin)
+
+        queryset = RawFileModel.objects.filter(
+            pipeline__project__slug=project,
+            pipeline__slug=pipeline,
+        ).select_related("created_by")
+        if not allow_all_uploaders and dashboard_user is None:
+            queryset = queryset.none()
+        elif (dashboard_user is not None) and (not allow_all_uploaders):
+            queryset = queryset.filter(created_by_id=dashboard_user.id)
+
+        rows = (
+            queryset.values("orig_file", "created_by__email")
+            .distinct()
+            .order_by("created_by__email")
+        )
+        row_count = 0
+        for row in rows:
+            row_count += 1
+            email = (row.get("created_by__email") or "").strip()
+            _add_uploader_option(email, email)
+            raw_name = str(row.get("orig_file") or "").strip()
+            if raw_name and email:
+                db_uploader_by_raw[P(raw_name).stem.lower()] = email
+    except Exception as exc:
+        logging.warning(f"Uploader option DB source failed: {exc}")
+
+    if "Uploader" not in df.columns:
+        df["Uploader"] = None
+    if ("RawFile" in df.columns) and db_uploader_by_raw:
+        mapped_uploaders = df["RawFile"].map(
+            lambda raw: db_uploader_by_raw.get(P(str(raw)).stem.lower()) if pd.notna(raw) else None
+        )
+        df["Uploader"] = df["Uploader"].where(
+            df["Uploader"].notna() & (df["Uploader"].astype(str).str.strip() != ""),
+            mapped_uploaders,
+        )
+
+    uploader_values = (
+        df["Uploader"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    uploader_values = sorted(
+        {value for value in uploader_values if value and value.lower() not in {"nan", "none"}},
+        key=str.lower,
+    )
+    for value in uploader_values:
+        _add_uploader_option(value, value)
+
+    api_uploaders = T.get_pipeline_uploaders(
+        project=project,
+        pipeline=pipeline,
+        uid=effective_uid,
+    )
+    for option in api_uploaders:
+        _add_uploader_option(option.get("label", ""), option.get("value", ""))
+
+    if (
+        (is_admin_session or len(uploader_options) > 1)
+        and uploader_filter
+        and uploader_filter != "__all__"
+        and "Uploader" in df.columns
+    ):
+        df = df[df["Uploader"].astype(str) == str(uploader_filter)].reset_index(drop=True)
+
+    df_display = df[available_cols] if len(available_cols) > 0 else pd.DataFrame(index=df.index)
 
     records = df.to_dict("records")
-    return T.table_from_dataframe(df, id="qc-table", row_selectable="multi"), records
+    show_scope_user = bool(is_admin_session or len(uploader_options) > 1)
+    scope_style = {"display": "block"} if show_scope_user else {"display": "none"}
+    return (
+        T.table_from_dataframe(df_display, id="qc-table", row_selectable="multi"),
+        records,
+        uploader_options,
+        scope_style,
+        uploader_options,
+    )
 
 
 @app.callback(

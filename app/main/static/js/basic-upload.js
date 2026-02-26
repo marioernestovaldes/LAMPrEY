@@ -50,7 +50,7 @@ $(function () {
       "<td><span class='upload-queue-status status-queued'>queued</span></td>" +
       "</tr>";
     $("#upload-queue-empty").remove();
-    $("#upload-queue-body").prepend(html);
+    $("#upload-queue-body").append(html);
     updateQueueCount();
     return uploadId;
   }

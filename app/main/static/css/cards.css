@@ -54,15 +54,15 @@
 }
 
 .upload-feedback-success {
-  background: #e8f7ef;
-  border: 1px solid #c7e8d3;
-  color: #1f6b3a;
+  background: #e6f4f8;
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-brand-ink);
 }
 
 .upload-feedback-error {
-  background: #fdecec;
-  border: 1px solid #f3c6c6;
-  color: #992222;
+  background: #faecef;
+  border: 1px solid #e8c8cf;
+  color: var(--color-danger-ink);
 }
 
 .run-header-card {

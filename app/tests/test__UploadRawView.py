@@ -57,7 +57,7 @@ class UploadRawViewTestCase(TestCase):
         # Should also create a result automatically
         self.assertEqual(Result.objects.count(), 1)
 
-    def test_upload_raw_post_duplicate_fallback(self):
+    def test_upload_raw_post_duplicate_name_creates_new_run(self):
         self.client.force_login(self.user)
         # First upload
         fake_file_1 = SimpleUploadedFile("duplicate.raw", b"dummy raw data")
@@ -80,12 +80,12 @@ class UploadRawViewTestCase(TestCase):
         self.assertEqual(response2.status_code, 200)
         data = json.loads(response2.content)
         self.assertTrue(data.get("is_valid"))
-        self.assertTrue(data.get("already_exists"))
+        self.assertFalse(data.get("already_exists"))
 
-        # Only 1 raw file should exist for that pipeline
-        self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 1)
+        # Duplicate names should still create independent runs.
+        self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 2)
 
-    def test_upload_raw_post_duplicate_detects_nonstandard_stored_path(self):
+    def test_upload_raw_post_duplicate_with_legacy_path_creates_new_run(self):
         self.client.force_login(self.user)
         existing_raw = RawFile.objects.create(
             pipeline=self.pipeline,
@@ -112,15 +112,42 @@ class UploadRawViewTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertTrue(data.get("is_valid"))
-        self.assertTrue(data.get("already_exists"))
-        self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 1)
+        self.assertFalse(data.get("already_exists"))
+        self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 2)
 
-    @patch("maxquant.views.RawFile.objects.create")
+    def test_upload_raw_post_duplicate_from_other_user_creates_new_raw(self):
+        other_user = User.objects.create_user(
+            email="other-uploader@example.com", password="pass5678"
+        )
+        RawFile.objects.create(
+            pipeline=self.pipeline,
+            created_by=other_user,
+            orig_file=SimpleUploadedFile("shared_name.raw", b"dummy raw data"),
+        )
+
+        self.client.force_login(self.user)
+        url = reverse("maxquant:basic_upload")
+        response = self.client.post(
+            url,
+            {
+                "pipeline": self.pipeline.pk,
+                "project": self.project.pk,
+                "orig_file": SimpleUploadedFile("shared_name.raw", b"dummy raw data"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertTrue(data.get("is_valid"))
+        self.assertFalse(data.get("already_exists"))
+        self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 2)
+
+    @patch("maxquant.views.RawFile.save")
     def test_upload_raw_post_non_duplicate_integrity_error_returns_500(
-        self, mocked_create
+        self, mocked_save
     ):
         self.client.force_login(self.user)
-        mocked_create.side_effect = IntegrityError("NOT NULL constraint failed")
+        mocked_save.side_effect = IntegrityError("NOT NULL constraint failed")
 
         url = reverse("maxquant:basic_upload")
         response = self.client.post(

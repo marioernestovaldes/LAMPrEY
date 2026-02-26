@@ -89,7 +89,7 @@ class Result(models.Model):
 
     @property
     def run_dir(self):
-        return COMPUTE_ROOT / "tmp" / "MaxQuant" / self.name
+        return COMPUTE_ROOT / "tmp" / "MaxQuant" / f"{self.name}__rf{self.raw_file.pk}"
 
     @property
     def pipename(self):

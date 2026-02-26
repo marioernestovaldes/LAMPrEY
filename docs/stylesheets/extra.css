@@ -60,7 +60,7 @@
     .mdx-hero__image {
         margin-left: 4rem;
         order: 2;
-        transform: translateX(2rem) translateY(-6rem);
+        transform: translateX(2rem) translateY(-7rem);
         width: 25rem;
     }
 }
@@ -72,7 +72,7 @@
     /* Limit width for better readability */
     order: 2;
     transform: none;
-    padding-bottom: 6rem;
+    padding-bottom: 10rem;
     /* Add padding to avoid overlap with wave */
 }
 

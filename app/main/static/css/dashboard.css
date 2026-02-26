@@ -87,6 +87,16 @@ body {
 
 .pqc-scope-field {
   min-width: 0;
+  position: relative;
+}
+
+.pqc-scope-field .Select {
+  position: relative;
+  z-index: 1;
+}
+
+.pqc-scope-field .Select.is-open {
+  z-index: 60;
 }
 
 .pqc-field-label {
@@ -205,6 +215,18 @@ body {
   border-radius: 10px;
   box-shadow: 0 7px 16px rgba(22, 70, 95, 0.14);
   margin-top: 4px;
+  z-index: 4000 !important;
+  max-height: 260px !important;
+  overflow-y: auto !important;
+}
+
+.pqc-scope-dropdown .Select-menu {
+  max-height: 248px !important;
+}
+
+.pqc-insights-panel,
+.pqc-scope-grid-inside {
+  overflow: visible;
 }
 
 .pqc-scope-dropdown .Select-option.is-focused {
@@ -258,7 +280,7 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: #215f79;
+  color: var(--color-brand-ink);
   font-size: 16px;
   font-weight: 700;
 }

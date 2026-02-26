@@ -1,6 +1,7 @@
 from os.path import isfile
 from pathlib import Path as P
 import hashlib
+from uuid import uuid4
 import pandas as pd
 import logging
 import numpy as np
@@ -59,7 +60,10 @@ def _pipelines_for_user(user):
 
 
 def _results_for_user(user):
-    queryset = Result.objects.select_related("raw_file__pipeline__project")
+    queryset = Result.objects.select_related(
+        "raw_file__pipeline__project",
+        "raw_file__created_by",
+    )
     if user.is_staff or user.is_superuser:
         return queryset
     return queryset.filter(raw_file__created_by_id=user.id).distinct()
@@ -67,29 +71,45 @@ def _results_for_user(user):
 
 @login_required
 def maxquant_pipeline_view(request, project, pipeline):
+    is_admin_session = request.user.is_staff or request.user.is_superuser
+    selected_uploader_filter = request.GET.get("uploader", "").strip()
+    selected_uploader_id = None
+    if is_admin_session and selected_uploader_filter:
+        try:
+            selected_uploader_id = int(selected_uploader_filter)
+        except ValueError:
+            selected_uploader_filter = ""
 
     # Pattern to store form data in session
     # to make pagination work with search form
+    def _runs_queryset(raw_file_regex=""):
+        queryset = _results_for_user(request.user).filter(
+            raw_file__pipeline__slug=pipeline,
+            raw_file__pipeline__project__slug=project,
+        )
+        if raw_file_regex:
+            queryset = queryset.filter(
+                raw_file__orig_file__iregex=raw_file_regex,
+            )
+        if selected_uploader_id is not None:
+            queryset = queryset.filter(raw_file__created_by_id=selected_uploader_id)
+        return queryset.order_by("-created")
+
     if not request.method == "POST":
         if "search-files" in request.session:
             request.POST = request.session["search-files"]
             request.method = "POST"
         else:
             form = SearchResult(request.POST)
-            maxquant_runs = _results_for_user(request.user).filter(
-                raw_file__pipeline__slug=pipeline,
-                raw_file__pipeline__project__slug=project,
-            ).order_by("-created")
+            maxquant_runs = _runs_queryset()
 
     if request.method == "POST":
         request.session["search-files"] = request.POST
         form = SearchResult(request.POST)
         if form.is_valid():
-            maxquant_runs = _results_for_user(request.user).filter(
-                raw_file__pipeline__slug=pipeline,
-                raw_file__pipeline__project__slug=project,
-                raw_file__orig_file__iregex=form.cleaned_data["raw_file"],
-            ).order_by("-created")
+            maxquant_runs = _runs_queryset(
+                raw_file_regex=form.cleaned_data["raw_file"]
+            )
 
     page = request.GET.get("page", 1)
     paginator = Paginator(maxquant_runs, settings.PAGINATE)
@@ -107,9 +127,11 @@ def maxquant_pipeline_view(request, project, pipeline):
     )
     missing_raw_files = RawFile.objects.filter(
         pipeline=pipeline, result__isnull=True
-    ).order_by("-created")
-    if not (request.user.is_staff or request.user.is_superuser):
+    ).select_related("created_by").order_by("-created")
+    if not is_admin_session:
         missing_raw_files = missing_raw_files.filter(created_by_id=request.user.id)
+    elif selected_uploader_id is not None:
+        missing_raw_files = missing_raw_files.filter(created_by_id=selected_uploader_id)
 
     # Adaptive queue-status strictness:
     # for small pages we allow stricter queue inspection; for larger workloads
@@ -145,10 +167,33 @@ def maxquant_pipeline_view(request, project, pipeline):
     context = dict(
         maxquant_runs=maxquant_runs, project=project, pipeline=pipeline
     )
+    uploader_filters = []
+    if is_admin_session:
+        uploader_rows = (
+            RawFile.objects.filter(pipeline=pipeline)
+            .select_related("created_by")
+            .values("created_by_id", "created_by__email")
+            .distinct()
+            .order_by("created_by__email")
+        )
+        uploader_filters = [
+            {
+                "id": row["created_by_id"],
+                "label": row["created_by__email"] or "Unknown user",
+            }
+            for row in uploader_rows
+            if row["created_by_id"] is not None
+        ]
     context["home_title"] = settings.HOME_TITLE
     context["form"] = form
+    context["is_admin_session"] = is_admin_session
+    context["uploader_filters"] = uploader_filters
+    context["selected_uploader_filter"] = selected_uploader_id
     context["missing_raw_files_count"] = missing_raw_files.count()
     context["missing_raw_files"] = missing_raw_files
+    query_params = request.GET.copy()
+    query_params.pop("page", None)
+    context["pipeline_querystring"] = query_params.urlencode()
     return render(request, "proteomics/pipeline_detail.html", context)
 
 
@@ -901,20 +946,6 @@ def maxquant_download(request, pk):
 
 
 class UploadRaw(LoginRequiredMixin, View):
-    def _resolve_existing_raw_file(self, pipeline, uploaded_name):
-        # Raw files are usually stored as upload/<filename>, but historical
-        # entries may keep a variant path. Resolve by exact path first, then
-        # by basename inside the same pipeline.
-        basename = P(uploaded_name).name
-        candidate = f"upload/{basename}"
-        queryset = RawFile.objects.filter(pipeline=pipeline)
-        existing = queryset.filter(orig_file=candidate).first()
-        if existing is not None:
-            return existing
-        return queryset.filter(orig_file__iendswith=f"/{basename}").order_by(
-            "-created"
-        ).first()
-
     def get(self, request, pk=None):
         pipeline = get_object_or_404(_pipelines_for_user(request.user), pk=pk)
         project = pipeline.project
@@ -943,30 +974,41 @@ class UploadRaw(LoginRequiredMixin, View):
 
         if form.is_valid():
             uploaded_file = form.cleaned_data["orig_file"]
-            existing = self._resolve_existing_raw_file(
-                pipeline, uploaded_file.name
-            )
 
-            if existing is not None:
-                # A stale DB entry can remain even if the physical RAW file was
-                # removed manually from disk. In that case, recreate the RawFile
-                # instead of pretending upload succeeded.
-                existing_missing = (not existing.path.is_file()) or (
-                    existing.path.is_file() and existing.path.stat().st_size == 0
+            def _logical_raw_name(value):
+                basename = P(str(value)).name.lower()
+                match = re.match(r"^[0-9a-f]{32}_(.+)$", basename)
+                if match:
+                    return match.group(1)
+                return basename
+
+            uploaded_basename = _logical_raw_name(uploaded_file.name)
+
+            # If a prior run with the same basename exists for this uploader and
+            # pipeline but its Result was deleted, restore that Result instead of
+            # creating a duplicate RawFile row.
+            missing_result_raw = None
+            for candidate in (
+                RawFile.objects.filter(
+                    pipeline=pipeline,
+                    result__isnull=True,
                 )
-                if existing_missing:
-                    logging.warning(
-                        "Replacing stale RawFile entry (pk=%s, name=%s): file missing/empty at %s",
-                        existing.pk,
-                        existing.name,
-                        existing.path,
-                    )
-                    existing.delete()
-                    existing = None
+                .only("id", "orig_file")
+                .order_by("-id")
+            ):
+                candidate_owner_id = getattr(candidate, "created_by_id", None)
+                owner_matches = (
+                    candidate_owner_id is None or candidate_owner_id == request.user.id
+                )
+                if not owner_matches:
+                    continue
+                if _logical_raw_name(candidate.orig_file.name) == uploaded_basename:
+                    missing_result_raw = candidate
+                    break
 
-            if existing is not None:
-                result, created = Result.objects.get_or_create(
-                    raw_file=existing,
+            if missing_result_raw is not None:
+                result, _ = Result.objects.get_or_create(
+                    raw_file=missing_result_raw,
                     defaults={
                         "created_by": request.user,
                         "input_source": "upload",
@@ -974,51 +1016,35 @@ class UploadRaw(LoginRequiredMixin, View):
                 )
                 data = {
                     "is_valid": True,
-                    "name": str(existing.name),
-                    "url": str(existing.path),
-                    "already_exists": True,
-                    "restored_result": created,
+                    "name": str(missing_result_raw.name),
+                    "url": str(missing_result_raw.path),
                     "result_url": result.url,
                     "result_pk": result.pk,
+                    "already_exists": True,
+                    "restored_result": True,
                 }
                 return JsonResponse(data)
 
+            # Always create a fresh run, even for same file names.
+            # Keep unique file names in storage to avoid uniqueness collisions.
+            uploaded_file.name = f"{uuid4().hex}_{P(uploaded_file.name).name}"
+
             try:
                 with transaction.atomic():
-                    raw_file = RawFile.objects.create(
+                    raw_file = RawFile(
                         orig_file=uploaded_file,
                         pipeline=pipeline,
                         created_by=request.user,
                     )
+                    # Ensure new uploads never fall back into legacy name-based paths.
+                    raw_file._force_namespaced_storage = True
+                    raw_file.save()
             except IntegrityError as exc:
-                # Handle rare races where the same file is uploaded
-                # concurrently.
-                existing = self._resolve_existing_raw_file(
-                    pipeline, uploaded_file.name
-                )
-                if existing is None:
-                    data = {
-                        "is_valid": False,
-                        "error": f"Could not save file: {exc}",
-                    }
-                    return JsonResponse(data, status=500)
-                result, created = Result.objects.get_or_create(
-                    raw_file=existing,
-                    defaults={
-                        "created_by": request.user,
-                        "input_source": "upload",
-                    },
-                )
                 data = {
-                    "is_valid": True,
-                    "name": str(existing.name),
-                    "url": str(existing.path),
-                    "already_exists": True,
-                    "restored_result": created,
-                    "result_url": result.url,
-                    "result_pk": result.pk,
+                    "is_valid": False,
+                    "error": f"Could not save file: {exc}",
                 }
-                return JsonResponse(data)
+                return JsonResponse(data, status=500)
 
             result, _ = Result.objects.get_or_create(
                 raw_file=raw_file,

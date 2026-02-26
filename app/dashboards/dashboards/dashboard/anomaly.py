@@ -225,26 +225,35 @@ def callbacks(app):
         if cached_key == cache_key and cached_payload:
             raise PreventUpdate
 
-        uid = kwargs["user"].uuid
+        user = kwargs.get("user")
+        uid = getattr(user, "uuid", None)
+        if uid is None:
+            raise PreventUpdate
 
-        pqc = ProteomicsQC(
-            host=os.getenv("OMICS_URL", "http://localhost:8000"),
-            project_slug=project,
-            pipeline_slug=pipeline,
-            uid=uid,
-        )
-
-        qc_data = pqc.get_qc_data(data_range=None).set_index("RawFile")
+        # Use already loaded QC scope data from dashboard state to avoid
+        # secondary API calls that may fail auth-context checks.
+        qc_data = pd.DataFrame(scope_data or [])
+        if qc_data.empty or "RawFile" not in qc_data.columns:
+            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key
+        qc_data = qc_data.set_index("RawFile")
 
         # Replace column fully None → True
+        if "Use Downstream" not in qc_data.columns:
+            qc_data["Use Downstream"] = True
         if qc_data["Use Downstream"].isna().all():
             qc_data["Use Downstream"] = True
+        if "Flagged" not in qc_data.columns:
+            qc_data["Flagged"] = False
 
         params = dict(n_estimators=1000, max_features=10)
 
-        predictions, df_shap = T.detect_anomalies(
-            qc_data, algorithm=algorithm, columns=columns, fraction=fraction, **params
-        )
+        try:
+            predictions, df_shap = T.detect_anomalies(
+                qc_data, algorithm=algorithm, columns=columns, fraction=fraction, **params
+            )
+        except Exception as exc:
+            logging.warning(f"Anomaly detection skipped for {project}/{pipeline}: {exc}")
+            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key
 
         # Update flags in backend
         currently_unflagged = list(qc_data[~qc_data.Flagged].reset_index().RawFile)
@@ -252,10 +261,20 @@ def callbacks(app):
         files_to_flag   = [i for i in predictions[predictions.Anomaly == 1].index if i in currently_unflagged]
         files_to_unflag = [i for i in predictions[predictions.Anomaly == 0].index if i in currently_flagged]
 
+        pqc = ProteomicsQC(
+            host=os.getenv("OMICS_URL", "http://localhost:8000"),
+            project_slug=project,
+            pipeline_slug=pipeline,
+            uid=uid,
+        )
         pqc.rawfile(files_to_flag, "flag")
         pqc.rawfile(files_to_unflag, "unflag")
 
-        payload = df_shap.to_json() if df_shap is not None else None
+        payload = (
+            df_shap.to_json(orient="split")
+            if df_shap is not None
+            else None
+        )
         return payload, f"updated-{project}-{pipeline}-{fraction_in}", cache_key
 
 
@@ -300,10 +319,12 @@ def callbacks(app):
         if shapley_values is None:
             return {}, config, hidden_graph_style, {"display": "flex"}
 
-        df_shap = pd.read_json(shapley_values)
-
-        fns = qc_data["RawFile"]
-        df_shap = df_shap.loc[fns]
+        try:
+            df_shap = pd.read_json(shapley_values, orient="split")
+        except ValueError:
+            # Backward compatibility with cached payloads serialized
+            # using pandas default orient.
+            df_shap = pd.read_json(shapley_values)
 
         # samples on rows, QC metrics on columns
         fns = qc_data["RawFile"].astype(str)

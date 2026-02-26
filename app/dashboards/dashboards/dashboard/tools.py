@@ -88,6 +88,24 @@ def get_pipelines(project, uid=None):
     return requests.post(url, data=data, headers=headers).json()
 
 
+def get_pipeline_uploaders(project, pipeline, uid=None):
+    url = f"{URL}/api/pipeline-uploaders"
+    headers = {"Content-type": "application/json"}
+    payload = dict(project=project, pipeline=pipeline)
+    if uid is not None:
+        payload["uid"] = uid
+    try:
+        resp = requests.post(url, data=json.dumps(payload), headers=headers, timeout=30)
+        if not resp.ok:
+            logging.error(f"Pipeline uploaders request failed ({resp.status_code}): {resp.text[:500]}")
+            return []
+        data = resp.json()
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        logging.error(f"Pipeline uploaders request error: {e}")
+        return []
+
+
 def get_protein_groups(
     project, pipeline, protein_names=None, columns=None, data_range=None, raw_files=None, uid=None
 ):
@@ -447,17 +465,28 @@ def detect_anomalies(
     available_cols = [c for c in columns if c in qc_data.columns]
     selected_cols = [c for c in available_cols if is_numeric_dtype(qc_data[c])]
     if not selected_cols:
+        fallback_cols = [
+            c
+            for c in qc_data.select_dtypes(include=[np.number]).columns
+            if c not in {"Index"}
+        ]
+        selected_cols = [c for c in fallback_cols if is_numeric_dtype(qc_data[c])]
+    if not selected_cols:
         raise ValueError("No numeric columns available for anomaly detection")
     selected_cols.reverse()
     if max_features is not None:
-        max_features = max(max_features, len(selected_cols))
+        if isinstance(max_features, (int, np.integer)):
+            max_features = min(max_features, len(selected_cols))
+            max_features = max(1, max_features)
+        model_kws["max_features"] = max_features
     log_cols = [
         "Ms1MedianSummedIntensity",
         "Ms2MedianSummedIntensity",
         "MedianPrecursorIntensity",
     ]
     for c in log_cols:
-        qc_data[c] = qc_data[c].apply(log2p1)
+        if c in qc_data.columns:
+            qc_data[c] = qc_data[c].apply(log2p1)
 
     df_train = qc_data[qc_data["Use Downstream"].fillna(False)][selected_cols].fillna(0)
     df_all = qc_data[selected_cols].fillna(0)

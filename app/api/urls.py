@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path("projects", views.ProjectNames.as_view(), name="projects"),
     path("pipelines", views.PipelineNames.as_view(), name="mq-pipelines"),
+    path("pipeline-uploaders", views.PipelineUploaders.as_view(), name="pipeline-uploaders"),
     path("qc-data", views.QcDataAPI.as_view(), name="qc-data"),
     path("protein-names", views.ProteinNamesAPI.as_view(), name="protein-names"),
     path("protein-groups", views.ProteinGroupsAPI.as_view(), name="protein-groups"),

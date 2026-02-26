@@ -54,7 +54,7 @@ class RawFile(models.Model):
     use_downstream = models.BooleanField(default=None, null=True, blank=True)
 
     class Meta:
-        unique_together = ("orig_file", "pipeline")
+        unique_together = ("orig_file", "pipeline", "created_by")
         verbose_name = _("RawFile")
         verbose_name_plural = _("RawFiles")
 
@@ -81,8 +81,27 @@ class RawFile(models.Model):
         return P(self.orig_file.name).name
 
     @property
-    def path(self):
+    def _legacy_path(self):
         return self.pipeline.input_path / P(self.name).with_suffix("").name / self.name
+
+    @property
+    def storage_scope(self):
+        stem = slugify(P(self.name).with_suffix("").name) or "raw"
+        uploader = self.created_by_id or 0
+        raw_pk = self.pk or 0
+        return f"u{uploader}_rf{raw_pk}_{stem}"
+
+    @property
+    def path(self):
+        namespaced = self.pipeline.input_path / self.storage_scope / self.name
+        legacy = self._legacy_path
+        if getattr(self, "_force_namespaced_storage", False):
+            return namespaced
+        if namespaced.is_file() or namespaced.parent.is_dir():
+            return namespaced
+        if legacy.is_file() or legacy.parent.is_dir():
+            return legacy
+        return namespaced
 
     @property
     def upload_path(self):
@@ -128,7 +147,15 @@ class RawFile(models.Model):
 
     @property
     def output_dir(self):
-        return self.pipeline.output_path / self.name
+        namespaced = self.pipeline.output_path / self.storage_scope
+        legacy = self.pipeline.output_path / self.name
+        if getattr(self, "_force_namespaced_storage", False):
+            return namespaced
+        if namespaced.is_dir():
+            return namespaced
+        if legacy.is_dir():
+            return legacy
+        return namespaced
 
     def make_output_dir(self):
         os.makedirs(self.output_dir, exist_ok=True)

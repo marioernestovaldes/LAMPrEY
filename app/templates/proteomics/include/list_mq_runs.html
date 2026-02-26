@@ -1,8 +1,18 @@
 <div class='block raw-files-block'>
   <form id="mq-cancel-csrf-form" style="display:none;">{% csrf_token %}</form>
-  <h2 class='name' style="font-size: 18px; color: #666;"><strong>Explore .raw files processed with this pipeline</strong></h2>
+  <h2 class='name' style="font-size: 18px; color: var(--color-text-muted);"><strong>Explore .raw files processed with this pipeline</strong></h2>
   <div class="mq-runs-toolbar">
     <input id="mq-runs-search" type="text" placeholder="Filter by file name..." aria-label="Filter raw files">
+    {% if is_admin_session %}
+      <select id="mq-runs-user-filter" class="mq-runs-user-filter" aria-label="Filter by uploader">
+        <option value="">All users</option>
+        {% for uploader in uploader_filters %}
+          <option value="{{ uploader.id }}" {% if uploader.id == selected_uploader_filter %}selected{% endif %}>
+            {{ uploader.label }}
+          </option>
+        {% endfor %}
+      </select>
+    {% endif %}
     <div class="mq-runs-toolbar-actions">
       <button
         id="mq-cancel-all-btn"
@@ -23,6 +33,7 @@
     <table class="mq-runs-table">
       <colgroup>
         <col class="mq-col-raw-file">
+        {% if is_admin_session %}<col class="mq-col-user">{% endif %}
         <col class="mq-col-overall">
         <col class="mq-col-maxquant">
         <col class="mq-col-rawtools-metrics">
@@ -35,6 +46,7 @@
       <thead>
         <tr>
           <th>Raw file</th>
+          {% if is_admin_session %}<th>User</th>{% endif %}
           <th>Overall</th>
           <th>MaxQuant</th>
           <th>RawTools metrics</th>
@@ -53,12 +65,17 @@
         {% for maxquant_run in maxquant_runs %}
           <tr data-run-name="{{ maxquant_run.raw_file|lower }}" data-overall-status="{{ maxquant_run.overall_status }}">
             <td title="{{ maxquant_run.raw_file }}"><span class="mq-run-name">{{ maxquant_run.raw_file }}</span></td>
+            {% if is_admin_session %}
+              <td class="mq-user-cell" title="{{ maxquant_run.raw_file.created_by.email }}">
+                <span class="mq-user-name">{{ maxquant_run.raw_file.created_by.email|default:"-" }}</span>
+              </td>
+            {% endif %}
             <td><span class="status-pill status-{{ maxquant_run.overall_status }}">{{ maxquant_run.overall_status }}</span></td>
             <td><span class="status-pill status-{{ maxquant_run.maxquant_status }}">{{ maxquant_run.maxquant_status }}</span></td>
             <td><span class="status-pill status-{{ maxquant_run.rawtools_metrics_status }}">{{ maxquant_run.rawtools_metrics_status }}</span></td>
             <td><span class="status-pill status-{{ maxquant_run.rawtools_qc_status }}">{{ maxquant_run.rawtools_qc_status }}</span></td>
-            <td><a class="mq-open-link" href="{{ maxquant_run.url }}">Open</a></td>
-            <td>
+            <td class="mq-run-action"><a class="mq-open-link" href="{{ maxquant_run.url }}">Open</a></td>
+            <td class="mq-run-action">
               {% if maxquant_run.has_active_stage %}
                 <button class="mq-open-link" type="button" disabled title="Already queued/running">
                   Queued
@@ -77,7 +94,7 @@
                 </button>
               {% endif %}
             </td>
-            <td>
+            <td class="mq-run-action">
               {% if maxquant_run.has_active_stage and request.user.is_superuser or maxquant_run.has_active_stage and request.user.is_staff or maxquant_run.has_active_stage and maxquant_run.raw_file.created_by_id == request.user.id %}
                 <button class="mq-cancel-btn" type="button" data-url="{% url 'maxquant:cancel_run_jobs' maxquant_run.pk %}">
                   Cancel
@@ -88,7 +105,7 @@
                 </button>
               {% endif %}
             </td>
-            <td>
+            <td class="mq-run-action">
               {% if request.user.is_superuser or request.user.is_staff or maxquant_run.raw_file.created_by_id == request.user.id %}
                 <button
                   class="mq-delete-btn"
@@ -108,12 +125,17 @@
         {% for missing_raw_file in missing_raw_files %}
           <tr data-run-name="{{ missing_raw_file.name|lower }}">
             <td title="{{ missing_raw_file.name }}"><span class="mq-run-name">{{ missing_raw_file.name }}</span></td>
+            {% if is_admin_session %}
+              <td class="mq-user-cell" title="{{ missing_raw_file.created_by.email }}">
+                <span class="mq-user-name">{{ missing_raw_file.created_by.email|default:"-" }}</span>
+              </td>
+            {% endif %}
             <td><span class="status-pill status-missing">missing</span></td>
             <td><span class="status-pill status-missing">missing</span></td>
             <td><span class="status-pill status-missing">missing</span></td>
             <td><span class="status-pill status-missing">missing</span></td>
-            <td><span class="mq-runs-count">-</span></td>
-            <td>
+            <td class="mq-run-action"><span class="mq-runs-count">-</span></td>
+            <td class="mq-run-action">
               <button
                 class="mq-open-link mq-queue-btn"
                 type="button"
@@ -122,8 +144,8 @@
                 Queue
               </button>
             </td>
-            <td><button class="mq-cancel-btn" type="button" disabled>Cancel</button></td>
-            <td>
+            <td class="mq-run-action"><button class="mq-cancel-btn" type="button" disabled>Cancel</button></td>
+            <td class="mq-run-action">
               {% if request.user.is_superuser or request.user.is_staff or missing_raw_file.created_by_id == request.user.id %}
                 <button
                   class="mq-delete-btn"
@@ -142,7 +164,7 @@
         {% endfor %}
         {% if not maxquant_runs and not missing_raw_files_count %}
           <tr id="mq-runs-empty-row">
-            <td id="mq-runs-empty" class="warning" colspan="9">No .raw files processed yet for this pipeline.</td>
+            <td id="mq-runs-empty" class="warning" colspan="{% if is_admin_session %}10{% else %}9{% endif %}">No .raw files processed yet for this pipeline.</td>
           </tr>
         {% endif %}
       </tbody>
@@ -153,6 +175,7 @@
 <script>
   (function () {
     const search = document.getElementById("mq-runs-search");
+    const userFilter = document.getElementById("mq-runs-user-filter");
     const tbody = document.getElementById("mq-runs-list");
     const count = document.getElementById("mq-runs-count");
     const cancelAllBtn = document.getElementById("mq-cancel-all-btn");
@@ -208,7 +231,8 @@
       if (!actionNote) return;
       actionNote.style.display = "block";
       actionNote.textContent = message;
-      actionNote.style.color = isError ? "#992222" : "#14528a";
+      actionNote.classList.remove("note-info", "note-error");
+      actionNote.classList.add(isError ? "note-error" : "note-info");
     };
 
     const updateCount = () => {
@@ -260,6 +284,20 @@
       });
       updateCount();
     });
+
+    if (userFilter) {
+      userFilter.addEventListener("change", () => {
+        const url = new URL(window.location.href);
+        const selectedUser = userFilter.value.trim();
+        if (selectedUser) {
+          url.searchParams.set("uploader", selectedUser);
+        } else {
+          url.searchParams.delete("uploader");
+        }
+        url.searchParams.delete("page");
+        window.location.assign(url.toString());
+      });
+    }
 
     tbody.addEventListener("click", async (event) => {
       const openLink = event.target.closest("a.mq-open-link[href]");
@@ -367,12 +405,34 @@
     updateCount();
     updateCancelAllState();
 
-    if (hasActiveRuns()) {
-      const note = document.getElementById("mq-runs-refresh-note");
-      if (note) note.style.display = "block";
-      autoRefreshTimer = setTimeout(() => {
+    const refreshNote = document.getElementById("mq-runs-refresh-note");
+    const startAutoRefresh = () => {
+      if (!hasActiveRuns()) {
+        if (refreshNote) refreshNote.style.display = "none";
+        if (autoRefreshTimer) {
+          clearInterval(autoRefreshTimer);
+          autoRefreshTimer = null;
+        }
+        return;
+      }
+
+      if (refreshNote) refreshNote.style.display = "block";
+      if (autoRefreshTimer) return;
+
+      autoRefreshTimer = setInterval(() => {
+        // Avoid reloading while tab is backgrounded; browser throttling can
+        // delay timers unpredictably and lead to confusing bursts of reloads.
+        if (document.hidden) return;
+        if (!hasActiveRuns()) {
+          clearInterval(autoRefreshTimer);
+          autoRefreshTimer = null;
+          if (refreshNote) refreshNote.style.display = "none";
+          return;
+        }
         window.location.reload();
       }, 20000);
-    }
+    };
+
+    startAutoRefresh();
   })();
 </script>

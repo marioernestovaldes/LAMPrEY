@@ -151,6 +151,9 @@ def callbacks(app):
 
         if x not in df.columns:
             x = "Index" if "Index" in df.columns else "RawFile"
+        if x == "Index" and "Index" in df.columns:
+            df = df.sort_values("Index", na_position="last").reset_index(drop=True)
+            df["Index"] = pd.RangeIndex(start=1, stop=len(df) + 1)
 
         if selected_metric not in df.columns:
             return (
@@ -214,6 +217,8 @@ def callbacks(app):
             showline=True,
             linecolor="#cddbe6",
         )
+        if x == "Index":
+            fig.update_xaxes(dtick=1, tickformat="d")
         fig.update_yaxes(
             title_text=metric_label,
             showgrid=False,

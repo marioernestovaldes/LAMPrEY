@@ -67,7 +67,7 @@
     <div class="block raw-files-pagination">
       <ul class="pagination">
         {% if maxquant_runs.has_previous %}
-        <li><a href="?page={{ maxquant_runs.previous_page_number }}">&laquo;</a></li>
+        <li><a href="?page={{ maxquant_runs.previous_page_number }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">&laquo;</a></li>
         {% else %}
         <li class="disabled"><span>&laquo;</span></li>
         {% endif %}
@@ -75,11 +75,11 @@
         {% if maxquant_runs.number == i %}
             <li class="active"><span>{{ i }} <span class="sr-only">(current)</span></span></li>
         {% else %}
-            <li><a href="?page={{ i }}">{{ i }}</a></li>
+            <li><a href="?page={{ i }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">{{ i }}</a></li>
         {% endif %}
         {% endfor %}
         {% if maxquant_runs.has_next %}
-        <li><a href="?page={{ maxquant_runs.next_page_number }}">&raquo;</a></li>
+        <li><a href="?page={{ maxquant_runs.next_page_number }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">&raquo;</a></li>
         {% else %}
         <li class="disabled"><span>&raquo;</span></li>
         {% endif %}
