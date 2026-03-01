@@ -210,6 +210,8 @@ def callbacks(app):
         fraction = (fraction_in or 5) / 100.0
         algorithm = "iforest"
         columns = columns or []
+        # Cache against the current scope payload itself, not just the selected
+        # project/pipeline parameters, so a changed sample set forces recompute.
         scope_sig = hashlib.md5(json.dumps(scope_data, sort_keys=True, default=str).encode("utf-8")).hexdigest()
         cache_key = json.dumps(
             {

@@ -1,6 +1,7 @@
 import os
 import hashlib
 import shutil
+import uuid
 
 from pathlib import Path as P
 
@@ -88,8 +89,11 @@ class RawFile(models.Model):
     def storage_scope(self):
         stem = slugify(P(self.name).with_suffix("").name) or "raw"
         uploader = self.created_by_id or 0
-        raw_pk = self.pk or 0
-        return f"u{uploader}_rf{raw_pk}_{stem}"
+        if self.pk:
+            return f"u{uploader}_rf{self.pk}_{stem}"
+        if not hasattr(self, "_pending_storage_scope"):
+            self._pending_storage_scope = f"u{uploader}_tmp{uuid.uuid4().hex[:12]}_{stem}"
+        return self._pending_storage_scope
 
     @property
     def path(self):
@@ -97,7 +101,7 @@ class RawFile(models.Model):
         legacy = self._legacy_path
         if getattr(self, "_force_namespaced_storage", False):
             return namespaced
-        if namespaced.is_file() or namespaced.parent.is_dir():
+        if namespaced.is_file():
             return namespaced
         if legacy.is_file() or legacy.parent.is_dir():
             return legacy
@@ -151,7 +155,7 @@ class RawFile(models.Model):
         legacy = self.pipeline.output_path / self.name
         if getattr(self, "_force_namespaced_storage", False):
             return namespaced
-        if namespaced.is_dir():
+        if self.pk and namespaced.is_dir():
             return namespaced
         if legacy.is_dir():
             return legacy

@@ -56,6 +56,23 @@ class MaxquantPipelineViewTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("maxquant_runs", response.context)
 
+    def test_pipeline_view_with_invalid_search_session_falls_back_to_default_queryset(self):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["search-files"] = {"raw_file": "x" * 101}
+        session.save()
+
+        url = reverse("maxquant:detail", kwargs={
+            "project": self.project.slug,
+            "pipeline": self.pipeline.slug
+        })
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        runs = list(response.context["maxquant_runs"].object_list)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0].pk, self.owner_result.pk)
+
     def test_pipeline_view_requires_login(self):
         """Verify pipeline view requires authentication."""
         url = reverse("maxquant:detail", kwargs={

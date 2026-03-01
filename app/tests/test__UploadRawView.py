@@ -142,6 +142,34 @@ class UploadRawViewTestCase(TestCase):
         self.assertFalse(data.get("already_exists"))
         self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 2)
 
+    def test_upload_raw_post_orphaned_missing_result_with_null_owner_creates_new_raw(self):
+        self.client.force_login(self.user)
+
+        orphan_raw = RawFile.objects.create(
+            pipeline=self.pipeline,
+            created_by=self.user,
+            orig_file=SimpleUploadedFile("orphaned.raw", b"dummy raw data"),
+        )
+        Result.objects.filter(raw_file=orphan_raw).delete()
+        RawFile.objects.filter(pk=orphan_raw.pk).update(created_by=None)
+
+        url = reverse("maxquant:basic_upload")
+        response = self.client.post(
+            url,
+            {
+                "pipeline": self.pipeline.pk,
+                "project": self.project.pk,
+                "orig_file": SimpleUploadedFile("orphaned.raw", b"dummy raw data"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertTrue(data.get("is_valid"))
+        self.assertFalse(data.get("already_exists"))
+        self.assertEqual(RawFile.objects.filter(pipeline=self.pipeline).count(), 2)
+        self.assertEqual(Result.objects.count(), 1)
+
     @patch("maxquant.views.RawFile.save")
     def test_upload_raw_post_non_duplicate_integrity_error_returns_500(
         self, mocked_save

@@ -1,6 +1,7 @@
 
 from django.test import TestCase
 from django.urls import reverse
+import os
 from project.models import Project
 from maxquant.models import Pipeline
 from maxquant.models import Result
@@ -51,6 +52,35 @@ class RawFileTestCase(TestCase):
     def test__maxquant_results_created(self):
         result = Result.objects.get(raw_file=self.raw_file)
         assert result is not None, result
+
+    def test__unsaved_rawfile_storage_scope_uses_unique_temp_namespace(self):
+        raw_a = RawFile(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("pending.raw", b"..."),
+        )
+        raw_b = RawFile(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("pending.raw", b"..."),
+        )
+
+        self.assertNotIn("_rf0_", raw_a.storage_scope)
+        self.assertNotIn("_rf0_", raw_b.storage_scope)
+        self.assertNotEqual(raw_a.storage_scope, raw_b.storage_scope)
+        self.assertIn("_tmp", raw_a.storage_scope)
+        self.assertIn("_tmp", raw_b.storage_scope)
+
+    def test__path_prefers_existing_legacy_file_over_empty_namespaced_dir(self):
+        namespaced_dir = self.raw_file.pipeline.input_path / self.raw_file.storage_scope
+        legacy_path = self.raw_file._legacy_path
+
+        os.makedirs(namespaced_dir, exist_ok=True)
+        os.makedirs(legacy_path.parent, exist_ok=True)
+        self.raw_file.path.rename(legacy_path)
+
+        self.assertTrue(namespaced_dir.is_dir())
+        self.assertFalse((namespaced_dir / self.raw_file.name).is_file())
+        self.assertTrue(legacy_path.is_file())
+        self.assertEqual(self.raw_file.path, legacy_path)
 
 
 class SameRawFileCanBeUploadedToMultiplePipelines(TestCase):
@@ -111,7 +141,9 @@ class ReuploadAfterResultDeletionRestoresResult(TestCase):
         )
 
         self.raw_file = RawFile.objects.create(
-            pipeline=self.pipeline, orig_file=SimpleUploadedFile("fake.raw", b"...")
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("fake.raw", b"..."),
+            created_by=self.user,
         )
         self.result = Result.objects.get(raw_file=self.raw_file)
 

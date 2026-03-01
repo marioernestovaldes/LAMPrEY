@@ -107,3 +107,14 @@ You can now navigate to [http://localhost:8080/admin](http://localhost:8080/admi
 admin account with the credentials you provided in step 5. To make this work you have to 
 configure a remote server that exposes forwards traffic to ports 80 (http) or 443 (https)
 to port 8080 and back. We recommend using NGINX for this purpose.
+## Rebuild versus restart
+
+`make devel` reuses the existing development image. This is the fast path for normal day-to-day work when only application code has changed.
+
+If you change `requirements.txt`, the Dockerfile, or dependency pins that affect the dashboard/UI stack, use:
+
+```bash
+make devel-build
+```
+
+This forces a Docker rebuild so the running environment matches the repository state. Without a rebuild, local code changes and installed package versions can drift apart and produce hard-to-trace UI regressions.

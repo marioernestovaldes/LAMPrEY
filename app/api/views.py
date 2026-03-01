@@ -16,6 +16,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny
 
 from django.http import JsonResponse
 from django.conf import settings
@@ -78,6 +79,7 @@ def _results_for_user(user):
 
 class ProjectNames(generics.ListAPIView):
     filter_fields = ["name", "slug"]
+    permission_classes = [AllowAny]
 
     def post(self, request, format=None):
         user = _get_request_user(request)
@@ -86,10 +88,12 @@ class ProjectNames(generics.ListAPIView):
         queryset = _projects_for_user(user)
         serializer = ProjectsNamesSerializer(queryset, many=True)
         data = serializer.data
-        return JsonResponse(data, status=201, safe=False)
+        return JsonResponse(data, status=200, safe=False)
 
 
 class PipelineNames(generics.ListAPIView):
+    permission_classes = [AllowAny]
+
     def post(self, request, format=None):
         user = _get_request_user(request)
         if user is None:
@@ -100,10 +104,12 @@ class PipelineNames(generics.ListAPIView):
         queryset = _pipelines_for_user(user).filter(project__slug=project)
         serializer = PipelineSerializer(queryset, many=True)
         data = serializer.data
-        return JsonResponse(data, status=201, safe=False)
+        return JsonResponse(data, status=200, safe=False)
 
 
 class PipelineUploaders(generics.ListAPIView):
+    permission_classes = [AllowAny]
+
     def post(self, request, format=None):
         user = _get_request_user(request)
         if user is None:
@@ -141,6 +147,8 @@ class PipelineUploaders(generics.ListAPIView):
 
 
 class QcDataAPI(generics.ListAPIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         user = _get_request_user(request)
         if user is None:
@@ -176,6 +184,8 @@ class QcDataAPI(generics.ListAPIView):
 
 
 class ProteinNamesAPI(generics.ListAPIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         user = _get_request_user(request)
         if user is None:
@@ -245,6 +255,8 @@ def remove(df, what="contaminants"):
 
 
 class ProteinGroupsAPI(generics.ListAPIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         """Returns reporter corrected intensity columns for selected proteins"""
         user = _get_request_user(request)

@@ -65,14 +65,22 @@ def get_projects(uid=None):
     url = f"{URL}/api/projects"
     payload = {}
     if uid is not None:
-        payload["uid"] = uid
+        payload["uid"] = str(uid)
     try:
-        _json = requests.post(
+        resp = requests.post(
             url,
             data=json.dumps(payload),
             headers={"Content-type": "application/json"},
-        ).json()
-    except Exception:
+            timeout=30,
+        )
+        if not resp.ok:
+            logging.error(f"Projects request failed ({resp.status_code}): {resp.text[:500]}")
+            return []
+        _json = resp.json()
+    except Exception as e:
+        logging.error(f"Projects request error: {e}")
+        return []
+    if not isinstance(_json, list):
         return []
     output = [{"label": i["name"], "value": i["slug"]} for i in _json]
     output.sort(key=lambda o: o["label"].lower())
@@ -84,9 +92,18 @@ def get_pipelines(project, uid=None):
     headers = {"Content-type": "application/json"}
     payload = dict(project=project)
     if uid is not None:
-        payload["uid"] = uid
+        payload["uid"] = str(uid)
     data = json.dumps(payload)
-    return requests.post(url, data=data, headers=headers).json()
+    try:
+        resp = requests.post(url, data=data, headers=headers, timeout=30)
+        if not resp.ok:
+            logging.error(f"Pipelines request failed ({resp.status_code}): {resp.text[:500]}")
+            return []
+        payload = resp.json()
+        return payload if isinstance(payload, list) else []
+    except Exception as e:
+        logging.error(f"Pipelines request error: {e}")
+        return []
 
 
 def get_pipeline_uploaders(project, pipeline, uid=None):
@@ -94,7 +111,7 @@ def get_pipeline_uploaders(project, pipeline, uid=None):
     headers = {"Content-type": "application/json"}
     payload = dict(project=project, pipeline=pipeline)
     if uid is not None:
-        payload["uid"] = uid
+        payload["uid"] = str(uid)
     try:
         resp = requests.post(url, data=json.dumps(payload), headers=headers, timeout=30)
         if not resp.ok:
@@ -120,7 +137,7 @@ def get_protein_groups(
             columns=columns,
             data_range=data_range,
             raw_files=raw_files,
-            uid=uid,
+            uid=str(uid) if uid is not None else None,
         )
     )
     res = requests.post(url, data=data, headers=headers).json()
@@ -146,7 +163,7 @@ def get_protein_names(
             remove_reversed_sequences=remove_reversed_sequences,
             data_range=data_range,
             raw_files=raw_files,
-            uid=uid,
+            uid=str(uid) if uid is not None else None,
         )
     )
     _json = requests.post(url, data=data, headers=headers).json()
@@ -161,7 +178,7 @@ def get_qc_data(project, pipeline, columns, data_range=None, uid=None):
         pipeline=pipeline,
         columns=columns,
         data_range=data_range,
-        uid=uid,
+        uid=str(uid) if uid is not None else None,
     )
     try:
         resp = requests.post(url, data=json.dumps(payload), headers=headers, timeout=30)

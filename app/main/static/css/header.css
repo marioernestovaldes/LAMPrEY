@@ -5,10 +5,10 @@
 
 #title {
   color: rgb(240, 240, 240);
-  font-size: 30;
+  font-size: 30px;
   font-weight: bold;
   text-align: left;
-  padding: 20;
+  padding: 15px;
 }
 
 .app-header {

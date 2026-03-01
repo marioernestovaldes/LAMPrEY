@@ -1,10 +1,13 @@
 beautifulsoup4
-dash
-dash-bootstrap-components
-dash-renderer
-dash-table
+# Keep Dash packages pinned so dashboard component markup/styles stay stable
+# across rebuilds. Unpinned upgrades can change Dropdown rendering and break
+# the custom selectors in app/main/static/css/dashboard.css.
+dash==2.18.2
+dash-bootstrap-components==1.6.0
+dash-renderer==1.9.1
+dash-table==5.0.0
 dash-table-experiments
-dash-tabulator
+dash-tabulator==0.4.2
 dask
 dask[dataframe]
 Django
@@ -18,14 +21,14 @@ django-currentuser
 django-extensions
 django-light
 django-ordered-model
-django-plotly-dash
+django-plotly-dash==2.4.3
 djangorestframework
 dpd_static_support
 joblib==1.2.0
 pyarrow
 redis
 celery
-scikit-learn>=1.5.0
+scikit-learn==1.2.2
 scipy==1.9.3
 scikit-plot
 shap

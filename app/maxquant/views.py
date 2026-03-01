@@ -95,13 +95,14 @@ def maxquant_pipeline_view(request, project, pipeline):
             queryset = queryset.filter(raw_file__created_by_id=selected_uploader_id)
         return queryset.order_by("-created")
 
+    maxquant_runs = _runs_queryset()
+
     if not request.method == "POST":
         if "search-files" in request.session:
             request.POST = request.session["search-files"]
             request.method = "POST"
         else:
             form = SearchResult(request.POST)
-            maxquant_runs = _runs_queryset()
 
     if request.method == "POST":
         request.session["search-files"] = request.POST
@@ -993,13 +994,11 @@ class UploadRaw(LoginRequiredMixin, View):
                     pipeline=pipeline,
                     result__isnull=True,
                 )
-                .only("id", "orig_file")
+                .only("id", "orig_file", "created_by")
                 .order_by("-id")
             ):
                 candidate_owner_id = getattr(candidate, "created_by_id", None)
-                owner_matches = (
-                    candidate_owner_id is None or candidate_owner_id == request.user.id
-                )
+                owner_matches = candidate_owner_id == request.user.id
                 if not owner_matches:
                     continue
                 if _logical_raw_name(candidate.orig_file.name) == uploaded_basename:

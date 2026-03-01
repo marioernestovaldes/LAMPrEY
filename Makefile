@@ -31,6 +31,18 @@ devel:
 	@echo "Tailing web logs (Ctrl+C to stop logs; stack keeps running)..."
 	sudo docker-compose -f docker-compose-develop.yml logs -f web celery
 
+devel-build:
+	sudo docker-compose -f docker-compose-develop.yml down
+	sudo docker-compose -f docker-compose-develop.yml up -d --build
+	@echo "Waiting for dev server on http://localhost:8000 ..."
+	@until curl -sf http://localhost:8000/ >/dev/null; do \
+		sleep 2; \
+	done
+	@echo "server is responding"
+	@xdg-open http://localhost:8000 2>/dev/null || open http://localhost:8000 2>/dev/null || true
+	@echo "Tailing web logs (Ctrl+C to stop logs; stack keeps running)..."
+	sudo docker-compose -f docker-compose-develop.yml logs -f web celery
+
 build:
 	sudo docker-compose build
 

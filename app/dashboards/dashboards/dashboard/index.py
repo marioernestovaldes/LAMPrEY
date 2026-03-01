@@ -248,13 +248,7 @@ layout = html.Div(
                                 html.Div(
                                     id="tabs-content",
                                     className="pqc-canvas",
-                                    children=[
-                                        dcc.Graph(id="explorer-figure", style={"display": "none"}),
-                                        dcc.Graph(
-                                            id="explorer-scatter-matrix",
-                                            style={"display": "none"},
-                                        ),
-                                    ],
+                                    children=[],
                                 ),
                                 dcc.Loading(
                                     type="circle",
@@ -370,7 +364,7 @@ def pick_default_pipeline(options, current_value):
 def resolve_admin_session(_n_clicks, current_admin_value, current_uid_value, **kwargs):
     user = kwargs.get("user")
     if user is None:
-        return bool(current_admin_value), current_uid_value
+        return False, current_uid_value
     resolved_admin = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
     resolved_uid = getattr(user, "uuid", None)
     return (
@@ -586,7 +580,7 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
 
     df_display = df[available_cols] if len(available_cols) > 0 else pd.DataFrame(index=df.index)
 
-    records = df.to_dict("records")
+    records = df_display.to_dict("records")
     if not is_admin_session:
         uploader_options = [{"label": "All users", "value": "__all__"}]
     show_scope_user = bool(is_admin_session)
@@ -710,10 +704,6 @@ def update_kpis(data, project, pipeline):
     Input("qc-remove-unselected", "n_clicks"),
     Input("qc-figure", "selectedData"),
     Input("qc-figure", "clickData"),
-    Input("explorer-figure", "selectedData"),
-    Input("explorer-figure", "clickData"),
-    Input("explorer-scatter-matrix", "selectedData"),
-    Input("explorer-scatter-matrix", "clickData"),
     Input("qc-update-table", "n_clicks"),
     State("qc-table", "selected_rows"),
     State("qc-table", "derived_virtual_indices"),
@@ -723,10 +713,6 @@ def update_table_selection(
     remove_unselected,
     selectedData,
     clickData,
-    explorerSelectedData,
-    explorerClickData,
-    explorerScatterMatrixSelectedData,
-    explorerScatterMatrixClickData,
     table_refresh,
     selected_rows,
     virtual_ndxs,
@@ -741,7 +727,7 @@ def update_table_selection(
             row_pos = int(custom)
             if 0 <= row_pos < len(virtual_ndxs):
                 return virtual_ndxs[row_pos]
-            return row_pos
+            return None
 
         point_index = point.get("pointIndex")
         if isinstance(point_index, (int, float)) and int(point_index) == point_index:
@@ -772,10 +758,6 @@ def update_table_selection(
     if (
         (selectedData is None)
         and (clickData is None)
-        and (explorerSelectedData is None)
-        and (explorerClickData is None)
-        and (explorerScatterMatrixSelectedData is None)
-        and (explorerScatterMatrixClickData is None)
     ):
         raise PreventUpdate
 
@@ -792,32 +774,6 @@ def update_table_selection(
                 selected_rows.remove(ndx)
             else:
                 selected_rows.append(ndx)
-
-    if changed_id == "explorer-figure.clickData":
-        ndx = explorerClickData["points"][0]["pointIndex"]
-        ndx = virtual_ndxs[ndx]
-        if ndx in selected_rows:
-            selected_rows.remove(ndx)
-        else:
-            selected_rows.append(ndx)
-
-    if changed_id == "explorer-figure.selectedData":
-        points = explorerSelectedData["points"]
-        ndxs = _extend_rows_from_points(points)
-        selected_rows.extend(ndxs)
-
-    if changed_id == "explorer-scatter-matrix.clickData":
-        ndx = explorerScatterMatrixClickData["points"][0]["pointIndex"]
-        ndx = virtual_ndxs[ndx]
-        if ndx in selected_rows:
-            selected_rows.remove(ndx)
-        else:
-            selected_rows.append(ndx)
-
-    if changed_id == "explorer-scatter-matrix.selectedData":
-        points = explorerScatterMatrixSelectedData["points"]
-        ndxs = _extend_rows_from_points(points)
-        selected_rows.extend(ndxs)
 
     selected_rows = list(dict.fromkeys(selected_rows))
 
