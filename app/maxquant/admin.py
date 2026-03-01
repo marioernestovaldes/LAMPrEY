@@ -13,6 +13,8 @@ class RawFileAdmin(admin.ModelAdmin):
 
     list_display = (
         "name",
+        "project",
+        "owner",
         "download",
         "pipeline",
         "use_downstream",
@@ -21,17 +23,36 @@ class RawFileAdmin(admin.ModelAdmin):
         "created",
     )
 
-    sortable_by = ("created", "pipeline", "name", "use_downstream", "flagged")
+    sortable_by = (
+        "created",
+        "pipeline",
+        "name",
+        "use_downstream",
+        "flagged",
+        "created_by",
+    )
 
-    list_filter = ("pipeline", "use_downstream", "flagged")
+    list_filter = ("pipeline__project", "pipeline", "created_by", "use_downstream", "flagged")
 
-    search_fields = ("orig_file",)
+    search_fields = ("orig_file", "pipeline__name", "pipeline__project__name", "created_by__email")
 
     group_by = "pipeline"
 
     ordering = ("-created",)
 
     actions = ("allow_use_downstream", "prevent_use_downstream", "save_and_run")
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset.select_related("pipeline__project", "created_by")
+
+    @admin.display(ordering="pipeline__project__name", description="Project")
+    def project(self, obj):
+        return obj.pipeline.project
+
+    @admin.display(ordering="created_by__email", description="User")
+    def owner(self, obj):
+        return obj.created_by
 
     def regroup_by(self):
         return "pipeline"
@@ -134,11 +155,10 @@ class ResultAdmin(admin.ModelAdmin):
         "download_raw",
     )
 
-    search_fields = ("raw_file__orig_file",)
-
     list_display = (
         "name",
         "project",
+        "owner",
         "pipeline",
         "n_files_maxquant",
         "n_files_rawtools_metrics",
@@ -189,13 +209,28 @@ class ResultAdmin(admin.ModelAdmin):
 
     ordering = ("-created",)
 
-    list_filter = ("raw_file__pipeline__project", "raw_file__pipeline")
+    list_filter = ("raw_file__pipeline__project", "raw_file__pipeline", "created_by")
+
+    search_fields = (
+        "raw_file__orig_file",
+        "raw_file__pipeline__name",
+        "raw_file__pipeline__project__name",
+        "created_by__email",
+    )
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset.select_related("raw_file__pipeline__project", "created_by")
 
     def download_raw(self, obj):
         return obj.raw_file.download
 
     def project(self, obj):
         return obj.raw_file.pipeline.project
+
+    @admin.display(ordering="created_by__email", description="User")
+    def owner(self, obj):
+        return obj.created_by
 
     def regroup_by(self):
         return ("project", "pipeline")
