@@ -76,7 +76,7 @@ layout = html.Div(
                                             searchable=False,
                                             options=[
                                                 {"label": "Input order", "value": "input"},
-                                                {"label": "Most anomalous first", "value": "anomalous_first"},
+                                                {"label": "Anomalous first", "value": "anomalous_first"},
                                             ],
                                             value="input",
                                         ),
@@ -263,14 +263,8 @@ def callbacks(app):
         files_to_flag   = [i for i in predictions[predictions.Anomaly == 1].index if i in currently_unflagged]
         files_to_unflag = [i for i in predictions[predictions.Anomaly == 0].index if i in currently_flagged]
 
-        pqc = ProteomicsQC(
-            host=os.getenv("OMICS_URL", "http://localhost:8000"),
-            project_slug=project,
-            pipeline_slug=pipeline,
-            uid=uid,
-        )
-        pqc.rawfile(files_to_flag, "flag")
-        pqc.rawfile(files_to_unflag, "unflag")
+        T.set_rawfile_action(project, pipeline, files_to_flag, "flag", user=user)
+        T.set_rawfile_action(project, pipeline, files_to_unflag, "unflag", user=user)
 
         payload = (
             df_shap.to_json(orient="split")

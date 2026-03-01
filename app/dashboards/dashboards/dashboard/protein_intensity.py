@@ -104,14 +104,13 @@ def callbacks(app):
             return [], []
 
         user = kwargs.get("user")
-        uid = getattr(user, "uuid", None)
         protein_data = T.get_protein_names(
             project=project,
             pipeline=pipeline,
             remove_contaminants=True,
             remove_reversed_sequences=True,
             raw_files=raw_files,
-            uid=uid,
+            user=user,
         )
 
         protein_df = pd.DataFrame(protein_data or {})
@@ -186,7 +185,6 @@ def callbacks(app):
 
         raw_files = scope_df["RawFile"].tolist()
         user = kwargs.get("user")
-        uid = getattr(user, "uuid", None)
         payload = T.get_protein_groups(
             project=project,
             pipeline=pipeline,
@@ -194,9 +192,9 @@ def callbacks(app):
             columns=["Reporter intensity corrected"],
             data_range=None,
             raw_files=raw_files,
-            uid=uid,
+            user=user,
         )
-        data_df = pd.read_json(payload) if payload else pd.DataFrame()
+        data_df = pd.DataFrame(payload) if payload else pd.DataFrame()
         if data_df.empty:
             return go.Figure(), config, hidden_style, "No protein intensity values found for the current selection.", {"display": "flex"}
 

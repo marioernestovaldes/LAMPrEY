@@ -1,4 +1,5 @@
 from django.http.response import HttpResponse
+import json
 import pandas as pd
 import numpy as np
 import logging
@@ -16,12 +17,12 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.permissions import AllowAny
 
 from django.http import JsonResponse
 from django.conf import settings
 from django.http import HttpResponseForbidden
 from django.db import models
+from django.core.exceptions import PermissionDenied
 
 timeout = 360
 
@@ -35,6 +36,10 @@ from user.models import User
 VERBOSE = settings.DEBUG
 
 
+def _dataframe_json_payload(df):
+    return json.loads(df.to_json())
+
+
 def _is_admin(user):
     return bool(user and (user.is_staff or user.is_superuser))
 
@@ -42,11 +47,7 @@ def _is_admin(user):
 def _get_request_user(request):
     if getattr(request, "user", None) and request.user.is_authenticated:
         return request.user
-    uid = request.data.get("uid")
-    if not uid:
-        return None
-    user = User.objects.filter(uuid=uid).first()
-    return user
+    return None
 
 
 def _projects_for_user(user):
@@ -77,9 +78,19 @@ def _results_for_user(user):
     return queryset.filter(raw_file__created_by_id=user.id).distinct()
 
 
+def _results_for_pipeline_mutation(user, pipeline):
+    queryset = Result.objects.select_related(
+        "raw_file__pipeline__project",
+        "raw_file__created_by",
+    ).filter(raw_file__pipeline=pipeline)
+    if _is_admin(user):
+        return queryset.distinct()
+    return queryset.filter(raw_file__created_by_id=user.id).distinct()
+
+
 class ProjectNames(generics.ListAPIView):
     filter_fields = ["name", "slug"]
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, format=None):
         user = _get_request_user(request)
@@ -92,7 +103,7 @@ class ProjectNames(generics.ListAPIView):
 
 
 class PipelineNames(generics.ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, format=None):
         user = _get_request_user(request)
@@ -108,7 +119,7 @@ class PipelineNames(generics.ListAPIView):
 
 
 class PipelineUploaders(generics.ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, format=None):
         user = _get_request_user(request)
@@ -147,7 +158,7 @@ class PipelineUploaders(generics.ListAPIView):
 
 
 class QcDataAPI(generics.ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = _get_request_user(request)
@@ -159,7 +170,10 @@ class QcDataAPI(generics.ListAPIView):
         pipeline_slug = data["pipeline"]
         data_range = data["data_range"]
 
-        df = get_qc_data(project_slug, pipeline_slug, data_range, user=user)
+        try:
+            df = get_qc_data(project_slug, pipeline_slug, data_range, user=user)
+        except PermissionDenied:
+            return HttpResponseForbidden("Missing permissions for requested pipeline.")
         if df is None:
             df = pd.DataFrame()
 
@@ -184,7 +198,7 @@ class QcDataAPI(generics.ListAPIView):
 
 
 class ProteinNamesAPI(generics.ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = _get_request_user(request)
@@ -255,7 +269,7 @@ def remove(df, what="contaminants"):
 
 
 class ProteinGroupsAPI(generics.ListAPIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         """Returns reporter corrected intensity columns for selected proteins"""
@@ -268,7 +282,7 @@ class ProteinGroupsAPI(generics.ListAPIView):
         project_slug = data["project"]
         pipeline_slug = data["pipeline"]
         data_range = data["data_range"]
-        raw_files = data["raw_files"]
+        raw_files = data.get("raw_files")
 
         if "columns" in data:
             columns = data["columns"]
@@ -287,11 +301,11 @@ class ProteinGroupsAPI(generics.ListAPIView):
             project_slug, pipeline_slug, data_range=data_range, user=user
         )
         if len(fns) == 0:
-            return JsonResponse(pd.DataFrame().to_json(), safe=False)
+            return JsonResponse(_dataframe_json_payload(pd.DataFrame()))
         if raw_files is not None:
             fns = [fn for fn in fns if P(fn).stem in raw_files]
             if len(fns) == 0:
-                return JsonResponse(pd.DataFrame().to_json(), safe=False)
+                return JsonResponse(_dataframe_json_payload(pd.DataFrame()))
 
         if "Reporter intensity corrected" in columns:
             df = pd.read_parquet(fns[0])
@@ -303,7 +317,7 @@ class ProteinGroupsAPI(generics.ListAPIView):
 
         df = get_protein_groups_data(fns, columns=columns, protein_names=protein_names)
 
-        return JsonResponse(df.to_json(), safe=False)
+        return JsonResponse(_dataframe_json_payload(df))
 
 
 class RawFileUploadAPI(APIView):
@@ -521,7 +535,7 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
         project__slug=project_slug, slug=pipeline_slug
     ).first()
     if pipeline is None:
-        return pd.DataFrame()
+        raise PermissionDenied("Missing permissions for requested pipeline.")
     results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
     n_results = len(results)
 
@@ -722,7 +736,7 @@ class CreateFlag(generics.ListAPIView):
         ).first()
         if pipeline is None:
             return JsonResponse({"status": "Missing permissions"}, status=403)
-        results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
+        results = _results_for_pipeline_mutation(user, pipeline)
         for result in results:
             if result.raw_file.name in raw_files:
                 logging.warning(f"Flag {result.raw_file.name} in {pipeline.name}")
@@ -759,7 +773,7 @@ class DeleteFlag(generics.ListAPIView):
         ).first()
         if pipeline is None:
             return JsonResponse({"status": "Missing permissions"}, status=403)
-        results = _results_for_user(user).filter(raw_file__pipeline=pipeline)
+        results = _results_for_pipeline_mutation(user, pipeline)
         for result in results:
             if result.raw_file.name in raw_files:
                 logging.warning(f"Un-flag {result.raw_file.name} in {pipeline.name}")

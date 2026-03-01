@@ -3,12 +3,13 @@ import sys
 import json
 import logging
 import numbers
+from pathlib import Path as P
 
 # from xml.etree.ElementPath import _SelectorContext
-import requests
 import shap
 import pandas as pd
 import numpy as np
+import dask.dataframe as dd
 
 from dash import dash_table as dt
 from dash.dash_table.Format import Format
@@ -19,6 +20,22 @@ import plotly.figure_factory as ff
 from matplotlib import pyplot as pl
 
 from pandas.api.types import is_numeric_dtype
+from django.db import models
+
+from api.views import (
+    _dataframe_json_payload,
+    _is_admin,
+    _pipelines_for_user,
+    _projects_for_user,
+    _results_for_pipeline_mutation,
+    get_protein_groups_data,
+    get_protein_quant_fn,
+    get_qc_data as api_get_qc_data,
+    remove,
+)
+from maxquant.models import RawFile as RawFileModel
+from maxquant.serializers import PipelineSerializer
+from project.serializers import ProjectsNamesSerializer
 
 
 from pycaret.anomaly import (
@@ -61,22 +78,12 @@ def table_from_dataframe(df, id="table", row_deletable=True, row_selectable="mul
     )
 
 
-def get_projects(uid=None):
-    url = f"{URL}/api/projects"
-    payload = {}
-    if uid is not None:
-        payload["uid"] = str(uid)
+def get_projects(user=None):
+    if user is None:
+        return []
     try:
-        resp = requests.post(
-            url,
-            data=json.dumps(payload),
-            headers={"Content-type": "application/json"},
-            timeout=30,
-        )
-        if not resp.ok:
-            logging.error(f"Projects request failed ({resp.status_code}): {resp.text[:500]}")
-            return []
-        _json = resp.json()
+        queryset = _projects_for_user(user)
+        _json = ProjectsNamesSerializer(queryset, many=True).data
     except Exception as e:
         logging.error(f"Projects request error: {e}")
         return []
@@ -87,61 +94,74 @@ def get_projects(uid=None):
     return output
 
 
-def get_pipelines(project, uid=None):
-    url = f"{URL}/api/pipelines"
-    headers = {"Content-type": "application/json"}
-    payload = dict(project=project)
-    if uid is not None:
-        payload["uid"] = str(uid)
-    data = json.dumps(payload)
+def get_pipelines(project, user=None):
+    if user is None:
+        return []
     try:
-        resp = requests.post(url, data=data, headers=headers, timeout=30)
-        if not resp.ok:
-            logging.error(f"Pipelines request failed ({resp.status_code}): {resp.text[:500]}")
-            return []
-        payload = resp.json()
+        queryset = _pipelines_for_user(user).filter(project__slug=project)
+        payload = PipelineSerializer(queryset, many=True).data
         return payload if isinstance(payload, list) else []
     except Exception as e:
         logging.error(f"Pipelines request error: {e}")
         return []
 
 
-def get_pipeline_uploaders(project, pipeline, uid=None):
-    url = f"{URL}/api/pipeline-uploaders"
-    headers = {"Content-type": "application/json"}
-    payload = dict(project=project, pipeline=pipeline)
-    if uid is not None:
-        payload["uid"] = str(uid)
+def get_pipeline_uploaders(project, pipeline, user=None):
+    if user is None:
+        return []
     try:
-        resp = requests.post(url, data=json.dumps(payload), headers=headers, timeout=30)
-        if not resp.ok:
-            logging.error(f"Pipeline uploaders request failed ({resp.status_code}): {resp.text[:500]}")
+        pipeline_obj = _pipelines_for_user(user).filter(
+            project__slug=project,
+            slug=pipeline,
+        ).first()
+        if pipeline_obj is None:
             return []
-        data = resp.json()
-        return data if isinstance(data, list) else []
+        queryset = RawFileModel.objects.filter(pipeline=pipeline_obj).select_related("created_by")
+        if not _is_admin(user):
+            queryset = queryset.filter(created_by_id=user.id)
+        rows = (
+            queryset.values("created_by__email")
+            .distinct()
+            .order_by("created_by__email")
+        )
+        output = []
+        for row in rows:
+            email = (row.get("created_by__email") or "").strip()
+            if not email:
+                continue
+            output.append({"label": email, "value": email})
+        return output
     except Exception as e:
         logging.error(f"Pipeline uploaders request error: {e}")
         return []
 
 
 def get_protein_groups(
-    project, pipeline, protein_names=None, columns=None, data_range=None, raw_files=None, uid=None
+    project, pipeline, protein_names=None, columns=None, data_range=None, raw_files=None, user=None
 ):
-    url = f"{URL}/api/protein-groups"
-    headers = {"Content-type": "application/json"}
-    data = json.dumps(
-        dict(
-            project=project,
-            pipeline=pipeline,
-            protein_names=protein_names,
-            columns=columns,
-            data_range=data_range,
-            raw_files=raw_files,
-            uid=str(uid) if uid is not None else None,
-        )
-    )
-    res = requests.post(url, data=data, headers=headers).json()
-    return res
+    if user is None:
+        return {}
+    if columns is None or protein_names is None:
+        return {}
+    try:
+        fns = get_protein_quant_fn(project, pipeline, data_range=data_range, user=user)
+        if len(fns) == 0:
+            return {}
+        if raw_files is not None:
+            fns = [fn for fn in fns if P(fn).stem in raw_files]
+            if len(fns) == 0:
+                return {}
+        columns = list(columns)
+        if "Reporter intensity corrected" in columns:
+            df = pd.read_parquet(fns[0])
+            intensity_columns = df.filter(regex="Reporter intensity corrected").columns.to_list()
+            columns.remove("Reporter intensity corrected")
+            columns = columns + intensity_columns
+        df = get_protein_groups_data(fns, columns=columns, protein_names=protein_names)
+        return _dataframe_json_payload(df)
+    except Exception as e:
+        logging.error(f"Protein groups request error: {e}")
+        return {}
 
 
 def get_protein_names(
@@ -151,48 +171,92 @@ def get_protein_names(
     remove_reversed_sequences=True,
     data_range=None,
     raw_files=None,
-    uid=None,
+    user=None,
 ):
-    url = f"{URL}/api/protein-names"
-    headers = {"Content-type": "application/json"}
-    data = json.dumps(
-        dict(
-            project=project,
-            pipeline=pipeline,
-            remove_contaminants=remove_contaminants,
-            remove_reversed_sequences=remove_reversed_sequences,
-            data_range=data_range,
-            raw_files=raw_files,
-            uid=str(uid) if uid is not None else None,
-        )
-    )
-    _json = requests.post(url, data=data, headers=headers).json()
-    return _json
-
-
-def get_qc_data(project, pipeline, columns, data_range=None, uid=None):
-    url = f"{URL}/api/qc-data"
-    headers = {"Content-type": "application/json"}
-    payload = dict(
-        project=project,
-        pipeline=pipeline,
-        columns=columns,
-        data_range=data_range,
-        uid=str(uid) if uid is not None else None,
-    )
+    if user is None:
+        return {}
     try:
-        resp = requests.post(url, data=json.dumps(payload), headers=headers, timeout=30)
-        if not resp.ok:
-            logging.error(f"QC data request failed ({resp.status_code}): {resp.text[:500]}")
+        fns = get_protein_quant_fn(project, pipeline, data_range=data_range, user=user)
+        if raw_files is not None:
+            fns = [fn for fn in fns if P(fn).stem in raw_files]
+        if len(fns) == 0:
             return {}
-        try:
-            return resp.json()
-        except ValueError as e:
-            logging.error(f"QC data JSON decode failed: {e}; body: {resp.text[:500]}")
-            return {}
+        cols = ["Majority protein IDs", "Fasta headers", "Score", "Intensity"]
+        ddf = dd.read_parquet(fns, engine="pyarrow")[cols]
+        if remove_contaminants:
+            ddf = remove(ddf, "contaminants")
+        if remove_reversed_sequences:
+            ddf = remove(ddf, "reversed_sequences")
+        dff = (
+            ddf.groupby(["Majority protein IDs", "Fasta headers"])
+            .mean()
+            .sort_values("Score")
+            .reset_index()
+            .rename(columns={"Majority protein IDs": "protein_names"})
+        )
+        res = dff.compute()
+        response = {}
+        for col in res.columns:
+            response[col] = res[col].to_list()
+        return response
+    except Exception as e:
+        logging.error(f"Protein names request error: {e}")
+        return {}
+
+
+def get_qc_data(project, pipeline, columns, data_range=None, user=None):
+    if user is None:
+        return {}
+    try:
+        df = api_get_qc_data(project, pipeline, data_range, user=user)
+        if df is None:
+            df = pd.DataFrame()
+        df = df.replace({np.nan: None})
+        response = {}
+        cols = df.columns if (not columns) else columns
+        n_rows = len(df.index)
+        for col in cols:
+            if col in df.columns:
+                response[col] = df[col].tolist()
+            else:
+                response[col] = [None] * n_rows
+        return response
     except Exception as e:
         logging.error(f"QC data request error: {e}")
         return {}
+
+
+def set_rawfile_action(project, pipeline, raw_files, action, user=None):
+    if user is None:
+        return {"status": "Missing user context."}
+    try:
+        pipeline_obj = _pipelines_for_user(user).filter(
+            project__slug=project,
+            slug=pipeline,
+        ).first()
+        if pipeline_obj is None:
+            return {"status": "Missing permissions"}
+        results = _results_for_pipeline_mutation(user, pipeline_obj)
+        raw_file_set = {str(P(i).name) for i in list(raw_files or [])}
+        for result in results:
+            if result.raw_file.name not in raw_file_set:
+                continue
+            if action == "flag":
+                result.raw_file.flagged = True
+                result.raw_file.save(update_fields=["flagged"])
+            elif action == "unflag":
+                result.raw_file.flagged = False
+                result.raw_file.save(update_fields=["flagged"])
+            elif action == "accept":
+                result.raw_file.use_downstream = True
+                result.raw_file.save(update_fields=["use_downstream"])
+            elif action == "reject":
+                result.raw_file.use_downstream = False
+                result.raw_file.save(update_fields=["use_downstream"])
+        return {"status": "success"}
+    except Exception as e:
+        logging.error(f"Raw file action error: {e}")
+        return {"status": str(e)}
 
 
 def gen_figure_config(
@@ -514,6 +578,7 @@ def detect_anomalies(
     algorithm=None,
     columns=None,
     max_features=None,
+    fraction=None,
     percentage=None,
     **model_kws,
 ):
@@ -537,6 +602,10 @@ def detect_anomalies(
     normalized_max_features = _normalize_max_features(max_features, len(selected_cols))
     if normalized_max_features is not None:
         model_kws["max_features"] = normalized_max_features
+    if "contamination" not in model_kws:
+        contamination = fraction if fraction is not None else percentage
+        if contamination is not None:
+            model_kws["contamination"] = float(contamination)
     log_cols = [
         "Ms1MedianSummedIntensity",
         "Ms2MedianSummedIntensity",

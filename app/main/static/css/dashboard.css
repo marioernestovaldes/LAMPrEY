@@ -595,7 +595,8 @@ body {
 .pqc-anomaly-dropdown .Select-value-label {
   line-height: 32px;
   color: #1f3e59 !important;
-  font-weight: 600;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .pqc-anomaly-dropdown .Select-control:hover {
@@ -606,6 +607,12 @@ body {
   border: 1px solid #a8c5d8;
   border-radius: 8px;
   box-shadow: 0 7px 16px rgba(22, 70, 95, 0.13);
+  min-width: 160px;
+}
+
+.pqc-anomaly-dropdown .Select-option {
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .pqc-anomaly-dropdown .Select-option.is-focused {

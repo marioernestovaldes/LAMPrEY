@@ -55,7 +55,18 @@ class RawFile(models.Model):
     use_downstream = models.BooleanField(default=None, null=True, blank=True)
 
     class Meta:
-        unique_together = ("orig_file", "pipeline", "created_by")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["orig_file", "pipeline", "created_by"],
+                condition=models.Q(created_by__isnull=False),
+                name="rawfile_unique_owned_upload",
+            ),
+            models.UniqueConstraint(
+                fields=["orig_file", "pipeline"],
+                condition=models.Q(created_by__isnull=True),
+                name="rawfile_unique_null_owner_upload",
+            ),
+        ]
         verbose_name = _("RawFile")
         verbose_name_plural = _("RawFiles")
 
@@ -103,7 +114,7 @@ class RawFile(models.Model):
             return namespaced
         if namespaced.is_file():
             return namespaced
-        if legacy.is_file() or legacy.parent.is_dir():
+        if legacy.is_file():
             return legacy
         return namespaced
 

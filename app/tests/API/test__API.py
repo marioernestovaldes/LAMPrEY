@@ -25,10 +25,15 @@ class ApiTestCase(TestCase):
                 email="api-user@example.com",
                 password="testpass123",
             )
+            self.member_user = User.objects.create_user(
+                email="member@example.com",
+                password="testpass123",
+            )
             self.project = Project.objects.create(
                 name="project", description="A test project", created_by=self.user
             )
             self.project.users.add(self.user)
+            self.project.users.add(self.member_user)
 
             contents_mqpar = b"<mqpar></mqpar>"
             contents_fasta = b">protein\nSEQUENCE"
@@ -74,6 +79,16 @@ class ApiTestCase(TestCase):
         response = c.post(url)
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
 
+    def test__projects_reject_uid_impersonation_without_auth(self):
+        c = Client()
+        url = f"{URL}/api/projects"
+        response = c.post(
+            url,
+            data={"uid": str(self.user.uuid)},
+            content_type="application/json",
+        )
+        assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
     def test__pipelines(self):
         """Test pipeline list endpoint."""
         c = Client()
@@ -90,6 +105,16 @@ class ApiTestCase(TestCase):
         c = Client()
         url = f"{URL}/api/pipelines"
         response = c.post(url, {"project": "project"}, content_type="application/json")
+        assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    def test__pipelines_reject_uid_impersonation_without_auth(self):
+        c = Client()
+        url = f"{URL}/api/pipelines"
+        response = c.post(
+            url,
+            {"project": "project", "uid": str(self.user.uuid)},
+            content_type="application/json",
+        )
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
 
     def test__create_flag_requires_auth(self):
@@ -130,6 +155,37 @@ class ApiTestCase(TestCase):
         })
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
 
+    def test__project_member_cannot_create_flag_for_other_users_raw_file(self):
+        c = Client()
+        c.force_login(self.member_user)
+        url = f"{URL}/api/flag/create"
+        response = c.post(url, {
+            "project": "project",
+            "pipeline": "pipe",
+            "raw_files": ["fake.raw"],
+        })
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        self.raw_file.refresh_from_db()
+        assert self.raw_file.flagged is False
+
+    def test__project_member_cannot_delete_flag_for_other_users_raw_file(self):
+        self.raw_file.flagged = True
+        self.raw_file.save(update_fields=["flagged"])
+
+        c = Client()
+        c.force_login(self.member_user)
+        url = f"{URL}/api/flag/delete"
+        response = c.post(url, {
+            "project": "project",
+            "pipeline": "pipe",
+            "raw_files": ["fake.raw"],
+        })
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        self.raw_file.refresh_from_db()
+        assert self.raw_file.flagged is True
+
     def test__rawfile_requires_auth(self):
         """Verify rawfile endpoint requires authentication."""
         c = Client()
@@ -141,6 +197,39 @@ class ApiTestCase(TestCase):
             "raw_files": ["fake.raw"],
         })
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    def test__qc_data_requires_pipeline_access(self):
+        other_user = User.objects.create_user(
+            email="qc-other@example.com",
+            password="testpass123",
+        )
+        c = Client()
+        c.force_login(other_user)
+        url = f"{URL}/api/qc-data"
+        response = c.post(url, {
+            "project": "project",
+            "pipeline": "pipe",
+            "data_range": 0,
+        }, content_type="application/json")
+
+        assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    @patch("api.views.get_protein_quant_fn", return_value=[])
+    def test__protein_groups_empty_result_returns_json_object(self, _mock_get_fns):
+        c = Client()
+        c.force_login(self.user)
+        url = f"{URL}/api/protein-groups"
+        response = c.post(url, {
+            "project": "project",
+            "pipeline": "pipe",
+            "data_range": 0,
+            "raw_files": [],
+            "columns": ["Score"],
+            "protein_names": ["P1"],
+        })
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert response.json() == {}, response.content
 
     def test__get_protein_quant_fn_data_range_limits_results(self):
         RawFile.objects.create(

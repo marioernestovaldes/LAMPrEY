@@ -35,6 +35,20 @@ except Exception as e:
 set_template()
 
 
+def _detected_tmt_qc_columns(columns):
+    pattern = re.compile(
+        r"^TMT\d+_(missing_values|peptide_count|protein_group_count)$"
+    )
+    detected = [c for c in columns if pattern.match(str(c))]
+    return sorted(
+        detected,
+        key=lambda c: (
+            int(re.search(r"\d+", str(c)).group(0)),
+            str(c),
+        ),
+    )
+
+
 if __name__ == "__main__":
     app = dash.Dash(
         __name__,
@@ -308,10 +322,9 @@ def render_content(tab):
 
 
 @app.callback(Output("project", "options"), [Input("B_update", "n_clicks")])
-def populate_projects(project, **kwargs):
+def populate_projects(_n_clicks, **kwargs):
     user = kwargs.get("user")
-    uid = getattr(user, "uuid", None)
-    return T.get_projects(uid=uid)
+    return T.get_projects(user=user)
 
 
 @app.callback(
@@ -331,8 +344,7 @@ def pick_default_project(options, current_value):
 @app.callback(Output("pipeline", "options"), [Input("project", "value")])
 def populate_pipelines(project, **kwargs):
     user = kwargs.get("user")
-    uid = getattr(user, "uuid", None)
-    _json = T.get_pipelines(project, uid=uid)
+    _json = T.get_pipelines(project, user=user)
     if len(_json) == 0:
         return []
     else:
@@ -428,7 +440,7 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
         pipeline=pipeline,
         columns=None,
         data_range=None,
-        uid=effective_uid,
+        user=user,
     )
 
     if data is None:
@@ -464,10 +476,7 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
             empty_options,
         )
 
-    tmt_missing_cols = sorted(
-        [c for c in df.columns if re.match(r"^TMT\d+_missing_values$", str(c))],
-        key=lambda c: int(re.search(r"\d+", str(c)).group(0)),
-    )
+    tmt_missing_cols = _detected_tmt_qc_columns(df.columns)
     selected_optional_cols = list(optional_columns or C.qc_columns_default)
     for tmt_col in tmt_missing_cols:
         if tmt_col not in selected_optional_cols:
@@ -565,7 +574,7 @@ def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin
     api_uploaders = T.get_pipeline_uploaders(
         project=project,
         pipeline=pipeline,
-        uid=effective_uid,
+        user=user,
     )
     for option in api_uploaders:
         _add_uploader_option(option.get("label", ""), option.get("value", ""))
@@ -615,10 +624,7 @@ def sync_qc_table_columns(scope_data, current_values):
             values = list(C.qc_columns_default)
         return list_to_dropdown_options(base_options), values
 
-    detected_tmt = sorted(
-        [c for c in df.columns if re.match(r"^TMT\d+_missing_values$", str(c))],
-        key=lambda c: int(re.search(r"\d+", str(c)).group(0)),
-    )
+    detected_tmt = _detected_tmt_qc_columns(df.columns)
 
     dynamic_options = [c for c in base_options if c in df.columns and c not in C.qc_columns_always]
     for col in detected_tmt:
@@ -823,7 +829,7 @@ def update_selected_raw_files(
     if ((accept is None) and (reject is None)) or (not selection):
         raise PreventUpdate
 
-    uid = kwargs["user"].uuid
+    user = kwargs.get("user")
 
     changed_id = [p["prop_id"] for p in dash.callback_context.triggered][0]
     if changed_id == "accept.n_clicks":
@@ -839,14 +845,7 @@ def update_selected_raw_files(
 
     raw_files = [P(i).with_suffix(".raw") for i in raw_files]
 
-    pqc = ProteomicsQC(
-        host=os.getenv("OMICS_URL", "http://localhost:8000"),
-        project_slug=project,
-        pipeline_slug=pipeline,
-        uid=uid,
-    )
-
-    response = pqc.rawfile(raw_files, action)
+    response = T.set_rawfile_action(project, pipeline, raw_files, action, user=user)
 
     if response["status"] == "success":
         return dbc.Alert("Success", color="success")

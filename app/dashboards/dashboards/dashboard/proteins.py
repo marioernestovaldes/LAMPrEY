@@ -129,7 +129,6 @@ def callbacks(app):
         raw_files = list(pd.DataFrame(data).RawFile.values)
 
         user = kwargs.get("user")
-        uid = getattr(user, "uuid", None)
         df = pd.DataFrame(
             T.get_protein_names(
                 project=project,
@@ -137,7 +136,7 @@ def callbacks(app):
                 remove_contaminants="remove_contaminants" in options,
                 remove_reversed_sequences="remove_reversed_sequences" in options,
                 raw_files=raw_files,
-                uid=uid,
+                user=user,
             )
         )
         return df.to_dict("records")
@@ -189,7 +188,6 @@ def callbacks(app):
         raw_files = list(qc_data.RawFile.values)
 
         user = kwargs.get("user")
-        uid = getattr(user, "uuid", None)
         data = T.get_protein_groups(
             project,
             pipeline,
@@ -197,10 +195,10 @@ def callbacks(app):
             columns=[plot_column],
             data_range=data_range,
             raw_files=raw_files,
-            uid=uid,
+            user=user,
         )
 
-        df = pd.read_json(data)
+        df = pd.DataFrame(data) if data else pd.DataFrame()
 
         color = None
 

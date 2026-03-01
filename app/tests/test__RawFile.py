@@ -2,6 +2,7 @@
 from django.test import TestCase
 from django.urls import reverse
 import os
+from django.db import IntegrityError
 from project.models import Project
 from maxquant.models import Pipeline
 from maxquant.models import Result
@@ -81,6 +82,57 @@ class RawFileTestCase(TestCase):
         self.assertFalse((namespaced_dir / self.raw_file.name).is_file())
         self.assertTrue(legacy_path.is_file())
         self.assertEqual(self.raw_file.path, legacy_path)
+
+    def test__path_keeps_namespaced_file_when_only_legacy_dir_exists(self):
+        namespaced_path = self.raw_file.pipeline.input_path / self.raw_file.storage_scope / self.raw_file.name
+        legacy_path = self.raw_file._legacy_path
+
+        os.makedirs(legacy_path.parent, exist_ok=True)
+
+        self.assertTrue(namespaced_path.is_file())
+        self.assertTrue(legacy_path.parent.is_dir())
+        self.assertFalse(legacy_path.is_file())
+        self.assertEqual(self.raw_file.path, namespaced_path)
+
+    def test__duplicate_owned_rawfile_is_rejected(self):
+        owner = User.objects.create_user(email="owner@example.com", password="pass1234")
+        first = RawFile.objects.create(
+            pipeline=self.pipeline,
+            created_by=owner,
+            orig_file=SimpleUploadedFile("owned-duplicate-a.raw", b"..."),
+        )
+        second = RawFile.objects.create(
+            pipeline=self.pipeline,
+            created_by=owner,
+            orig_file=SimpleUploadedFile("owned-duplicate-b.raw", b"..."),
+        )
+        RawFile.objects.filter(pk=first.pk).update(orig_file="upload/owned-duplicate.raw")
+
+        with self.assertRaises(IntegrityError):
+            RawFile.objects.filter(pk=second.pk).update(orig_file="upload/owned-duplicate.raw")
+
+    def test__duplicate_null_owner_rawfile_is_rejected(self):
+        first = RawFile.objects.create(
+            pipeline=self.pipeline,
+            created_by=User.objects.create_user(email="null-owner@example.com", password="pass1234"),
+            orig_file=SimpleUploadedFile("null-owner-duplicate-a.raw", b"..."),
+        )
+        RawFile.objects.filter(pk=first.pk).update(
+            created_by=None,
+            orig_file="upload/null-owner-duplicate.raw",
+        )
+
+        second = RawFile.objects.create(
+            pipeline=self.pipeline,
+            created_by=User.objects.create_user(email="null-owner-2@example.com", password="pass1234"),
+            orig_file=SimpleUploadedFile("null-owner-duplicate-b.raw", b"..."),
+        )
+
+        with self.assertRaises(IntegrityError):
+            RawFile.objects.filter(pk=second.pk).update(
+                created_by=None,
+                orig_file="upload/null-owner-duplicate.raw",
+            )
 
 
 class SameRawFileCanBeUploadedToMultiplePipelines(TestCase):
