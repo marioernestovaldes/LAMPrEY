@@ -1,0 +1,92 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/admin-login.css' %}">
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} login pqc-admin-login-body{% endblock %}
+{% block usertools %}{% endblock %}
+{% block nav-global %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="pqc-admin-login-shell">
+  <section class="pqc-admin-login-card">
+    <div class="pqc-admin-login-brand">
+      <p class="pqc-admin-login-kicker">ProteomicsQC</p>
+      <h1 class="pqc-admin-login-title">{{ site_header|default:"ProteomicsQC administration" }}</h1>
+      <p class="pqc-admin-login-copy">
+        Sign in with your staff account to access pipelines, users, and QC administration.
+      </p>
+    </div>
+
+    <div class="pqc-admin-login-panel">
+      {% if form.errors and not form.non_field_errors %}
+        <div class="pqc-admin-login-alert">
+          {% blocktranslate count counter=form.errors.items|length %}
+            Please correct the error below.
+          {% plural %}
+            Please correct the errors below.
+          {% endblocktranslate %}
+        </div>
+      {% endif %}
+
+      {% if form.non_field_errors %}
+        {% for error in form.non_field_errors %}
+          <div class="pqc-admin-login-alert">{{ error }}</div>
+        {% endfor %}
+      {% endif %}
+
+      {% if user.is_authenticated %}
+        <div class="pqc-admin-login-note">
+          {% blocktranslate with username=user.get_username trimmed %}
+            You are authenticated as {{ username }}, but are not authorized to access this page.
+            Would you like to sign in with a different account?
+          {% endblocktranslate %}
+        </div>
+      {% endif %}
+
+      <form action="{{ app_path }}" method="post" id="login-form" class="pqc-admin-login-form">
+        {% csrf_token %}
+        <div class="pqc-admin-login-field">
+          {{ form.username.label_tag }}
+          {{ form.username }}
+          {% if form.username.errors %}
+            <div class="pqc-admin-login-field-error">{{ form.username.errors|striptags }}</div>
+          {% endif %}
+        </div>
+
+        <div class="pqc-admin-login-field">
+          {{ form.password.label_tag }}
+          {{ form.password }}
+          {% if form.password.errors %}
+            <div class="pqc-admin-login-field-error">{{ form.password.errors|striptags }}</div>
+          {% endif %}
+          <div class="pqc-admin-login-help">
+            Use the same credentials you use for the application and dashboard.
+          </div>
+        </div>
+
+        {% url 'admin_password_reset' as password_reset_url %}
+        {% if password_reset_url %}
+          <div class="pqc-admin-login-links">
+            <a href="{{ password_reset_url }}">Forgot your password?</a>
+          </div>
+        {% endif %}
+
+        <div class="pqc-admin-login-actions">
+          <input type="hidden" name="next" value="{{ next }}">
+          <input type="submit" value="{% translate 'Log in' %}">
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}
