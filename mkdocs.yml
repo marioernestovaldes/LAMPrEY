@@ -19,7 +19,7 @@ nav:
 extra:
   analytics:
       provider: google
-      property: G-9FFCYK4MWP   
+      property: G-3B0G926SJ2   
 repo_name: ProteomicsQC
 repo_url: https://github.com/LewisResearchGroup/ProteomicsQC
 theme:

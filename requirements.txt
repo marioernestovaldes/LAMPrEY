@@ -32,7 +32,7 @@ scikit-learn==1.2.2
 scipy==1.9.3
 scikit-plot
 shap
-pycaret==3.0.0
+pycaret>=3.0.0,<3.4.0
 psycopg2-binary
 panel
 polars
@@ -40,3 +40,4 @@ pytest-django
 pytest-celery
 waitress
 plotly-resampler
+whitenoise
