@@ -1,0 +1,16 @@
+{
+  "runs": [
+    {
+      "filename": "DEMO_01.raw",
+      "seed_dir": "demo_01"
+    },
+    {
+      "filename": "DEMO_02.raw",
+      "seed_dir": "demo_02"
+    },
+    {
+      "filename": "DEMO_03.raw",
+      "seed_dir": "demo_03"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+2026-03-01 22:33:00.768 +00:00 [INF] Program started with arguments: -f /demo/input/DEMO_01.raw -o /datalake/P/P1/P1MQ3/output/u1_rf194_demo_01/rawtools -p -q -x -u -l -m -r TMT11 -chro 12TB
+2026-03-01 22:33:00.887 +00:00 [INF] Files to be processed, provided as list: /demo/input/DEMO_01.raw
+2026-03-01 22:33:00.943 +00:00 [INF] Extracting scan indices
+2026-03-01 22:33:25.573 +00:00 [INF] Extracting scan events
+2026-03-01 22:33:25.611 +00:00 [INF] Extracting method/instrument information
+2026-03-01 22:33:31.342 +00:00 [INF] Extracting trailer extras
+2026-03-01 22:33:32.287 +00:00 [INF] Extracting precursor masses
+2026-03-01 22:33:32.392 +00:00 [INF] Extracting retention times

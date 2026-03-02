@@ -1,0 +1,45 @@
+Configuring 
+Assemble run info 
+Finish run info 
+Testing fasta files 
+Testing raw files 
+Feature detection 
+Deisotoping 
+MS/MS preparation 
+Calculating peak properties 
+Combining apl files for first search 
+Preparing searches 
+MS/MS first search 
+Read search results for recalibration 
+Mass recalibration 
+Calculating masses 
+MS/MS preparation for main search 
+Combining apl files for main search 
+MS/MS main search 
+Preparing combined folder  
+Correcting errors 
+Reading search engine results 
+Preparing reverse hits 
+Finish search engine results 
+Filter identifications (MS/MS) 
+Calculating PEP 
+Copying identifications 
+Applying FDR 
+Assembling second peptide MS/MS 
+Combining second peptide files 
+Second peptide search 
+Reading search engine results (SP) 
+Finish search engine results (SP) 
+Filtering identifications (SP) 
+Applying FDR (SP) 
+Re-quantification 
+Reporter quantification 
+Prepare protein assembly 
+Assembling proteins 
+Assembling unidentified peptides 
+Finish protein assembly 
+Updating identifications 
+Estimating complexity 
+Prepare writing tables  
+Writing tables 
+Finish writing tables  

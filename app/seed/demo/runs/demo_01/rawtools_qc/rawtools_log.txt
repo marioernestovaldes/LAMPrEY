@@ -1,0 +1,12 @@
+2026-03-01 22:33:00.772 +00:00 [INF] Program started with arguments: -d /datalake/P/P1/P1MQ3/inputs/u1_rf194_demo_01 -qc /demo/output/DEMO_01/rawtools_qc
+2026-03-01 22:33:00.822 +00:00 [INF] Appears to be a new QC directory. New QC data collection created.
+2026-03-01 22:33:00.825 +00:00 [INF] Raw files in QC queue: ["/demo/input/DEMO_01.raw"]
+2026-03-01 22:33:00.896 +00:00 [INF] Files to be processed, provided as directory: /demo/input/DEMO_01.raw
+2026-03-01 22:33:00.956 +00:00 [INF] Extracting scan indices
+2026-03-01 22:33:26.470 +00:00 [INF] Extracting scan events
+2026-03-01 22:33:26.517 +00:00 [INF] Extracting method/instrument information
+2026-03-01 22:33:32.461 +00:00 [INF] Extracting trailer extras
+2026-03-01 22:33:33.437 +00:00 [INF] Extracting precursor masses
+2026-03-01 22:33:33.540 +00:00 [INF] Extracting retention times
+2026-03-01 22:34:06.190 +00:00 [INF] Appears to be a new QC directory. New QC data collection created.
+2026-03-01 22:34:06.480 +00:00 [INF] QC file saved successfully
