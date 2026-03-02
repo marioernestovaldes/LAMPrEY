@@ -1,14 +1,11 @@
-![](docs/img/ProteomicsQC.jpg)
+# **LAMPrEY**: a Python-based automated quality control tool for large-scale proteomics datasets
 
-# **ProteomicsQC**: Quality Control Server for large-cohort quantitative proteomics using tandem-mass-tags (e.g. TMT11)
+LAMPrEY is a quality control (QC) pipeline server for quantitative proteomics, automated processing, and interactive visualisations of QC results. 
 
-A quality control (QC) pipeline server for quantitative proteomics, automated processing, and interactive visualisations of QC results.
-The server allows to setup multiple proteomics pipelines grouped by projects. 
-The user can drag and drop new RAW mass spectrometry files which are processed automatically. 
-Results are visualized in an interactive dashboard and accessible via a RESTful API for third party applications and extensions.
-The server can be started with Docker Compose using either `docker-compose`
-or `docker compose`.
-Underlying software is _MaxQuant_ and _RawTools_ for proteomics, _Django_ for the web-server and API and _Plotly/Dash_ for the interactive dashboard.
+![](docs/img/ProteomicsQC1.png 'ProteomicsQC overview')
+
+The server allows to setup multiple proteomics pipelines grouped by projects. Users can submit new RAW mass spectrometry files which are processed automatically using pre-stablished pipelines. Results are visualized in an interactive dashboard and accessible via a RESTful API for third party applications and extensions. The server can be started with Docker Compose using either `docker-compose`
+or `docker compose`. Underlying software is _MaxQuant_ and _RawTools_ for proteomics, _Django_ for the web-server and API and _Plotly/Dash_ for the interactive dashboard.
 
 More information can be found in the [Documentation](https://LewisResearchGroup.github.io/ProteomicsQC/).
 
