@@ -263,3 +263,38 @@ class ApiTestCase(TestCase):
             )
 
         assert len(fns) == 2, fns
+
+    def test__get_protein_quant_fn_data_range_limits_filtered_raw_files(self):
+        RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("fake-1.raw", b"..."),
+            created_by=self.user,
+            created=date(2024, 1, 1),
+        )
+        RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("fake-2.raw", b"..."),
+            created_by=self.user,
+            created=date(2024, 1, 2),
+        )
+        RawFile.objects.create(
+            pipeline=self.pipeline,
+            orig_file=SimpleUploadedFile("fake-3.raw", b"..."),
+            created_by=self.user,
+            created=date(2024, 1, 3),
+        )
+
+        with patch(
+            "maxquant.Result.Result.create_protein_quant",
+            autospec=True,
+            side_effect=lambda result: result.raw_file.logical_name,
+        ):
+            fns = get_protein_quant_fn(
+                self.project.slug,
+                self.pipeline.slug,
+                data_range=2,
+                raw_files=["fake-1.raw", "fake-2.raw", "fake-3.raw"],
+                user=self.user,
+            )
+
+        assert fns == ["fake-2.raw", "fake-3.raw"], fns

@@ -405,7 +405,12 @@ def get_protein_quant_fn(
         n_results = len(results)
 
         if (n_results > data_range) and (n_results > 0):
-            results = results.order_by("raw_file__created")[n_results - data_range :]
+            if isinstance(results, list):
+                results = sorted(results, key=lambda res: res.raw_file.created)[
+                    n_results - data_range :
+                ]
+            else:
+                results = results.order_by("raw_file__created")[n_results - data_range :]
 
     fns = []
     for res in results:
