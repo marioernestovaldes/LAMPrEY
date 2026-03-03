@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
@@ -118,7 +119,10 @@ class HomeViewTestCase(TestCase):
             f"Open {old_pipeline.project.name} / {old_pipeline.name} upload queue.",
         )
 
-    def test_active_runs_counts_all_visible_runs_not_only_recent_three(self):
+    @patch.object(Result, "_task_state", return_value="PENDING")
+    def test_active_runs_counts_all_visible_runs_not_only_recent_three(
+        self, _mock_task_state
+    ):
         self.client.force_login(self.user)
         now = timezone.now()
 

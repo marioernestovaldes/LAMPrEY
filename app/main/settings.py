@@ -233,6 +233,9 @@ def _resolve_storage_root(env_var, container_default):
 if "test" in sys.argv or any("pytest" in arg for arg in sys.argv):
     DATALAKE_ROOT = P("/tmp/datalake/")
     COMPUTE_ROOT = P("/tmp/compute/")
+    STORAGES["staticfiles"] = {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    }
 else:
     DATALAKE_ROOT = _resolve_storage_root("DATALAKE", "/datalake/")
     COMPUTE_ROOT = _resolve_storage_root("COMPUTE", "/compute/")

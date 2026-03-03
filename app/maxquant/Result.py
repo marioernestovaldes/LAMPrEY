@@ -553,13 +553,21 @@ class Result(models.Model):
         )
 
     def _stage_is_queued(self, task_id, task_state, submitted_at):
-        del submitted_at
         if task_state in {"RECEIVED", "RETRY"}:
             return True
         if task_state == "PENDING":
             # Keep PENDING as queued to avoid "missing" churn that can trigger
             # duplicate re-submissions during normal broker backlogs.
             return True
+        if task_state is None and task_id and submitted_at is not None:
+            # If the result backend is unavailable, AsyncResult.state can fail.
+            # Treat recently submitted tasks as queued so the UI/tests still
+            # reflect in-flight work, but avoid keeping them queued forever.
+            warning_after = int(
+                getattr(settings, "RESULT_STATUS_PENDING_STALLED_WARNING_SECONDS", 7200)
+            )
+            age_seconds = (timezone.now() - submitted_at).total_seconds()
+            return age_seconds <= warning_after
         if task_state != "STARTED":
             return False
         # STARTED jobs are active if they are visible on a worker snapshot.
