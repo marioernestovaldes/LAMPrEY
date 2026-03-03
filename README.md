@@ -1,10 +1,17 @@
 # LAMPrEY
 
-LAMPrEY is a Docker-based quality control pipeline server for quantitative proteomics. It combines automated RAW file processing, an admin interface for pipelines and projects, an interactive dashboard, and an authenticated API.
+LAMPrEY is a Docker-based quality control pipeline server for quantitative proteomics. It is designed for laboratories that want to organize proteomics pipelines, process RAW files automatically, and review QC results through a web interface.
 
 ![](docs/img/ProteomicsQC1.png "ProteomicsQC overview")
 
 Full documentation: [LewisResearchGroup.github.io/ProteomicsQC](https://LewisResearchGroup.github.io/ProteomicsQC/)
+
+## What It Provides
+
+- project and pipeline management through the Django admin
+- automated RAW file processing with MaxQuant and RawTools
+- an interactive QC dashboard
+- an authenticated API for programmatic access
 
 ## Requirements
 
@@ -33,6 +40,8 @@ Run the first-time setup:
 make init
 ```
 
+By default, `make init` uses the published container image.
+
 If the published image is unavailable, use the local-build fallback:
 
 ```bash
@@ -46,7 +55,7 @@ make devel   # development server on http://127.0.0.1:8000
 make serve   # production-style server on http://localhost:8080
 ```
 
-## What `make init` Does
+## Setup Modes
 
 `make init` performs the first-time setup using the published container image:
 
@@ -72,4 +81,4 @@ make test          # run tests
 - Generated configuration is stored in `.env`.
 - Local persistent data is stored under `./data/`.
 - The admin panel is available at `/admin` after startup.
-- For full installation, admin, API, and usage instructions, see the documentation site.
+- For installation details, admin usage, API documentation, and operational notes, see the documentation site.
