@@ -1,0 +1,113 @@
+body.app-user.model-user.change-list #changelist .actions,
+body.app-user.model-user.change-list #changelist .object-tools {
+    float: none;
+}
+
+body.app-user.model-user.change-list #changelist .pqc-admin-user-toolbar-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+body.app-user.model-user.change-list #changelist .pqc-admin-user-toolbar-row-primary {
+    justify-content: space-between;
+    gap: 24px;
+}
+
+body.app-user.model-user.change-list #changelist .pqc-admin-user-toolbar-row-secondary {
+    justify-content: flex-start;
+    margin-bottom: 14px;
+}
+
+body.app-user.model-user.change-list #changelist #toolbar {
+    flex: 0 1 720px;
+    width: min(720px, 100%);
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+}
+
+body.app-user.model-user.change-list #changelist #toolbar form,
+body.app-user.model-user.change-list #changelist #toolbar form > div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    margin: 0;
+}
+
+body.app-user.model-user.change-list #changelist #toolbar label {
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+}
+
+body.app-user.model-user.change-list #changelist #toolbar input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+}
+
+body.app-user.model-user.change-list #changelist .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+}
+
+body.app-user.model-user.change-list #changelist .actions label,
+body.app-user.model-user.change-list #changelist .actions select,
+body.app-user.model-user.change-list #changelist .actions button,
+body.app-user.model-user.change-list #changelist .actions .action-counter {
+    margin: 0;
+}
+
+body.app-user.model-user.change-list #changelist .actions .all,
+body.app-user.model-user.change-list #changelist .actions .question,
+body.app-user.model-user.change-list #changelist .actions .clear {
+    display: none;
+}
+
+body.app-user.model-user.change-list #content-main > .object-tools,
+body.app-user.model-user.change-list #changelist-form > .actions:last-of-type {
+    display: none;
+}
+
+body.app-user.model-user.change-list #changelist .object-tools {
+    display: flex;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+}
+
+body.app-user.model-user.change-list #changelist .object-tools li {
+    margin: 0;
+}
+
+body.app-user.model-user.change-list #changelist .object-tools a {
+    margin: 0;
+}
+
+@media (max-width: 1200px) {
+    body.app-user.model-user.change-list #changelist .pqc-admin-user-toolbar-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    body.app-user.model-user.change-list #changelist .object-tools {
+        justify-content: flex-start;
+    }
+
+    body.app-user.model-user.change-list #changelist #toolbar {
+        width: 100%;
+        flex-basis: auto;
+    }
+}
