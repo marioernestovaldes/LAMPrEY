@@ -1,5 +1,6 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.admin import GroupAdmin, UserAdmin
+from django.contrib.auth.models import Group
 
 # from django.contrib.auth.models import User
 from .models import User
@@ -42,8 +43,16 @@ class CustomUserAdmin(UserAdmin):
     )
 
     class Media:
-        css = {"all": ("css/admin-user-changelist.css",)}
-        js = ("js/admin-user-changelist.js",)
+        css = {"all": ("css/admin-shared-changelist.css",)}
 
 
+class CustomGroupAdmin(GroupAdmin):
+    list_filter = ()
+
+    class Media:
+        css = {"all": ("css/admin-shared-changelist.css",)}
+
+
+admin.site.unregister(Group)
+admin.site.register(Group, CustomGroupAdmin)
 admin.site.register(User, CustomUserAdmin)
