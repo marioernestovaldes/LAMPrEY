@@ -14,11 +14,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Run Django tests via Docker Compose
+    - name: Run pytest via Docker Compose
       env:
         UID: 1000
         CONCURRENCY: 1
         ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
       run: |
         touch .env
-        docker compose -f docker-compose-test.yml run --rm web /opt/conda/bin/python manage.py test --noinput
+        docker compose -f docker-compose-test.yml run --rm web /opt/conda/bin/python -m pytest

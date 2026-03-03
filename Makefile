@@ -130,7 +130,7 @@ down:
 	$(SUDO) $(COMPOSE) -f docker-compose-develop.yml down
 
 test: 
-	$(SUDO) $(COMPOSE) -f docker-compose-test.yml run --rm web $(PYTHON) manage.py test --noinput
+	$(SUDO) $(COMPOSE) -f docker-compose-test.yml run --rm web $(PYTHON) -m pytest
 
 get-test-data:
 	gdown --folder https://drive.google.com/drive/folders/1kdQUXbr6DTBNLFBXLYrR_RLoXDFwCh_N?usp=sharing --output app/tests/data/D01
