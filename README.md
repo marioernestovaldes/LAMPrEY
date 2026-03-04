@@ -33,6 +33,20 @@ git lfs pull
 
 The repository stores the bundled MaxQuant executable ZIP with Git LFS. Install `git-lfs` before cloning so `app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip` is downloaded as a real file instead of a small pointer.
 
+If `git lfs` is not available on Ubuntu or Debian, install it first:
+
+```bash
+sudo apt update
+sudo apt install -y git-lfs
+git lfs install
+```
+
+If you already cloned and only need to materialize the bundled MaxQuant ZIP:
+
+```bash
+git lfs pull --include="app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip" --exclude=""
+```
+
 If you download the repository from the GitHub web UI instead of cloning it, make sure the repository is configured to include Git LFS objects in archives. Otherwise the archive will contain only the LFS pointer file.
 
 Generate the local configuration:
