@@ -18,15 +18,22 @@ Full documentation: [LewisResearchGroup.github.io/ProteomicsQC](https://LewisRes
 - Docker Engine
 - Docker Compose, either `docker-compose` or `docker compose`
 - `make`
+- `git-lfs`
 
 ## Quick Start
 
 Clone the repository:
 
 ```bash
+git lfs install
 git clone git@github.com:LewisResearchGroup/ProteomicsQC.git ProteomicsQC
 cd ProteomicsQC
+git lfs pull
 ```
+
+The repository stores the bundled MaxQuant executable ZIP with Git LFS. Install `git-lfs` before cloning so `app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip` is downloaded as a real file instead of a small pointer.
+
+If you download the repository from the GitHub web UI instead of cloning it, make sure the repository is configured to include Git LFS objects in archives. Otherwise the archive will contain only the LFS pointer file.
 
 Generate the local configuration:
 
@@ -81,4 +88,5 @@ make test          # run tests
 - Generated configuration is stored in `.env`.
 - Local persistent data is stored under `./data/`.
 - The admin panel is available at `/admin` after startup.
+- The bundled MaxQuant ZIP is stored with Git LFS.
 - For installation details, admin usage, API documentation, and operational notes, see the documentation site.

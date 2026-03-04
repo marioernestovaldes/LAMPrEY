@@ -7,6 +7,7 @@ The supported setup is Docker-based. Install:
 - Docker Engine
 - Docker Compose, either as `docker-compose` or `docker compose`
 - `make`
+- `git-lfs`
 
 Install Docker Engine and Docker Compose by following the Docker documentation for your platform. For Ubuntu, see [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 
@@ -28,9 +29,15 @@ This guide uses `make` targets such as `make init` and `make devel` as shortcuts
 ## 2. Clone the repository
 
 ```bash
+git lfs install
 git clone git@github.com:LewisResearchGroup/ProteomicsQC.git ProteomicsQC
 cd ProteomicsQC
+git lfs pull
 ```
+
+This repository stores the bundled MaxQuant executable ZIP with Git LFS. If `git-lfs` is missing, the clone will contain a small pointer file instead of `app/seed/defaults/maxquant/MaxQuant_v_2.4.12.0.zip`.
+
+If you use GitHub's browser "Download ZIP" option instead of `git clone`, the archive only includes the real MaxQuant ZIP when the repository setting to include Git LFS objects in archives is enabled.
 
 ## 3. Generate the configuration
 
