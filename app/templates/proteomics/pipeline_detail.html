@@ -64,26 +64,28 @@
     </div>
 
     {% if maxquant_runs.has_other_pages %}
-    <div class="block raw-files-pagination">
-      <ul class="pagination">
-        {% if maxquant_runs.has_previous %}
-        <li><a href="?page={{ maxquant_runs.previous_page_number }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">&laquo;</a></li>
-        {% else %}
-        <li class="disabled"><span>&laquo;</span></li>
-        {% endif %}
-        {% for i in maxquant_runs.paginator.page_range %}
-        {% if maxquant_runs.number == i %}
-            <li class="active"><span>{{ i }} <span class="sr-only">(current)</span></span></li>
-        {% else %}
-            <li><a href="?page={{ i }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">{{ i }}</a></li>
-        {% endif %}
-        {% endfor %}
-        {% if maxquant_runs.has_next %}
-        <li><a href="?page={{ maxquant_runs.next_page_number }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">&raquo;</a></li>
-        {% else %}
-        <li class="disabled"><span>&raquo;</span></li>
-        {% endif %}
-      </ul>
+    <div class="block raw-files-pagination mq-pagination-shell">
+      <nav class="mq-pagination-nav" aria-label="Raw files pagination">
+        <ul class="mq-pagination-list">
+          {% if maxquant_runs.has_previous %}
+          <li><a class="mq-page-btn mq-page-btn-nav" href="?page={{ maxquant_runs.previous_page_number }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">Prev</a></li>
+          {% else %}
+          <li><span class="mq-page-btn mq-page-btn-nav is-disabled">Prev</span></li>
+          {% endif %}
+          {% for i in maxquant_runs.paginator.page_range %}
+          {% if maxquant_runs.number == i %}
+              <li><span class="mq-page-btn is-active">{{ i }} <span class="sr-only">(current)</span></span></li>
+          {% else %}
+              <li><a class="mq-page-btn" href="?page={{ i }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">{{ i }}</a></li>
+          {% endif %}
+          {% endfor %}
+          {% if maxquant_runs.has_next %}
+          <li><a class="mq-page-btn mq-page-btn-nav" href="?page={{ maxquant_runs.next_page_number }}{% if pipeline_querystring %}&{{ pipeline_querystring }}{% endif %}">Next</a></li>
+          {% else %}
+          <li><span class="mq-page-btn mq-page-btn-nav is-disabled">Next</span></li>
+          {% endif %}
+        </ul>
+      </nav>
     </div>
     {% endif %}
 {% endblock %}
