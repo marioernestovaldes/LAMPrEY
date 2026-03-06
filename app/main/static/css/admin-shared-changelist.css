@@ -100,3 +100,55 @@ body.app-maxquant.model-pipeline.add-form .form-row.field-project .related-widge
 body.app-maxquant.model-pipeline.change-form .form-row.field-project .related-widget-wrapper-link {
     display: none;
 }
+
+body.app-maxquant.model-rawfile.change-list #result_list th:not(.action-checkbox-column):not(.column-path),
+body.app-maxquant.model-rawfile.change-list #result_list td:not(.action-checkbox):not(.field-path) {
+    min-width: 100px;
+    white-space: nowrap;
+}
+
+body.app-maxquant.model-rawfile.change-list #result_list th.column-display_name,
+body.app-maxquant.model-rawfile.change-list #result_list td.field-display_name {
+    min-width: 340px;
+}
+
+body.app-maxquant.model-rawfile.change-list #result_list th.column-owner,
+body.app-maxquant.model-rawfile.change-list #result_list td.field-owner {
+    min-width: 170px;
+}
+
+body.app-maxquant.model-rawfile.change-list #result_list th.column-path,
+body.app-maxquant.model-rawfile.change-list #result_list td.field-path {
+    min-width: 420px;
+    max-width: 560px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+body.app-maxquant.model-result.change-list #result_list th:not(.action-checkbox-column),
+body.app-maxquant.model-result.change-list #result_list td:not(.action-checkbox) {
+    min-width: 95px;
+    white-space: nowrap;
+}
+
+body.app-maxquant.model-result.change-list #result_list th.column-display_name,
+body.app-maxquant.model-result.change-list #result_list td.field-display_name {
+    min-width: 340px;
+}
+
+body.app-maxquant.model-result.change-list #result_list th.column-owner,
+body.app-maxquant.model-result.change-list #result_list td.field-owner {
+    min-width: 170px;
+}
+
+body.app-maxquant.model-result.change-list #result_list th.column-status_protein_quant_parquet,
+body.app-maxquant.model-result.change-list #result_list td.field-status_protein_quant_parquet {
+    min-width: 210px;
+}
+
+body.app-maxquant.model-result.change-list #result_list th.column-maxquant_execution_time,
+body.app-maxquant.model-result.change-list #result_list td.field-maxquant_execution_time,
+body.app-maxquant.model-result.change-list #result_list th.column-created,
+body.app-maxquant.model-result.change-list #result_list td.field-created {
+    min-width: 180px;
+}

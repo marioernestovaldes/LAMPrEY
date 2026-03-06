@@ -39,6 +39,7 @@ class RawFileAdmin(admin.ModelAdmin):
     model = RawFile
 
     exclude = ("md5sum", "slug")
+    list_per_page = 20
 
     list_display = (
         "display_name",
@@ -254,6 +255,8 @@ class PipelineAdmin(admin.ModelAdmin):
 
 
 class ResultAdmin(admin.ModelAdmin):
+    list_per_page = 20
+
     readonly_fields = (
         "raw_file",
         "created",
