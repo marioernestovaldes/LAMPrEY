@@ -292,6 +292,22 @@
   font-size: 14px;
 }
 
+.upload-navigation-warning {
+  margin-top: 2px;
+  display: block;
+  color: #7a5a1a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.upload-navigation-warning strong {
+  font-weight: 700;
+}
+
+.upload-navigation-warning.is-active {
+  color: #8a4f00;
+}
+
 .upload-queue-table-wrap {
   max-height: 240px;
   overflow: auto;

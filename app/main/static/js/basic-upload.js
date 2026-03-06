@@ -2,11 +2,20 @@ $(function () {
   let shouldRefreshAfterUpload = false;
   let uploadSeq = 0;
   let activeUploadCount = 0;
+  const leavePageWarning =
+    "Uploads are still in progress. Leaving this page will cancel active uploads.";
+
+  function updateNavigationWarning() {
+    const $warning = $("#upload-navigation-warning");
+    if (!$warning.length) return;
+    $warning.toggleClass("is-active", activeUploadCount > 0);
+  }
 
   function setUploadActivity(delta) {
     activeUploadCount = Math.max(0, activeUploadCount + delta);
     const active = activeUploadCount > 0;
     window.__mqUploadsInProgress = active;
+    updateNavigationWarning();
     try {
       window.dispatchEvent(new CustomEvent("mq-upload-activity", {
         detail: { active: active, count: activeUploadCount },
@@ -15,6 +24,13 @@ $(function () {
       // Ignore event dispatch issues; the global flag is still updated.
     }
   }
+
+  window.addEventListener("beforeunload", function (event) {
+    if (activeUploadCount <= 0) return;
+    event.preventDefault();
+    event.returnValue = leavePageWarning;
+    return leavePageWarning;
+  });
 
   function escapeHtml(value) {
     return String(value)
@@ -216,4 +232,5 @@ $(function () {
   });
 
   updateQueueCount();
+  updateNavigationWarning();
 });
