@@ -307,6 +307,8 @@ layout = html.Div(
         html.Div(id="selected-raw-files", style={"display": "none"}),
         html.Div(id="shapley-values", style={"display": "none"}),
         html.Div(id="anomaly-cache-key", style={"display": "none"}),
+        dcc.Store(id="anomaly-proposed-flags", data=None),
+        dcc.Store(id="anomaly-apply-refresh", data=None),
         html.Div(
             [
                 dcc.Dropdown(
@@ -435,11 +437,21 @@ def sync_scope_uploader_value(options, current_value):
     Input("project", "value"),
     Input("pipeline", "value"),
     Input("scope-uploader", "value"),
+    Input("anomaly-apply-refresh", "data"),
     State("qc-table-columns", "value"),
     State("qc-admin-session", "data"),
     State("qc-user-uid", "data"),
 )
-def refresh_qc_table(project, pipeline, uploader_filter, optional_columns, admin_data, uid, **kwargs):
+def refresh_qc_table(
+    project,
+    pipeline,
+    uploader_filter,
+    _anomaly_refresh,
+    optional_columns,
+    admin_data,
+    uid,
+    **kwargs,
+):
     user = kwargs.get("user")
     effective_uid = getattr(user, "uuid", None) or uid
     is_admin_session = bool(admin_data)

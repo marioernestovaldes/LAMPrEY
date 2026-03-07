@@ -464,7 +464,7 @@ body {
 
 .pqc-anomaly-controls-row {
   display: grid;
-  grid-template-columns: minmax(180px, 230px) minmax(420px, 1fr) auto;
+  grid-template-columns: minmax(180px, 220px) minmax(360px, 1fr) minmax(320px, 420px) minmax(220px, 260px);
   align-items: stretch;
   gap: 12px;
 }
@@ -473,16 +473,16 @@ body {
   min-width: 0;
   border: 1px solid #c8dae6;
   border-radius: 10px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   background: #f9fcff;
-  min-height: 88px;
+  min-height: 74px;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 
 .pqc-anomaly-subtitle {
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 11px;
   color: #4f7489;
   line-height: 1.35;
@@ -491,13 +491,13 @@ body {
 .pqc-anomaly-slider-panel {
   border: 1px solid #c8dae6;
   border-radius: 10px;
-  padding: 8px 10px 4px;
+  padding: 7px 10px 3px;
   background: #f9fcff;
 }
 
 .pqc-anomaly-slider-panel-inline {
   margin: 0;
-  min-height: 88px;
+  min-height: 74px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -564,9 +564,9 @@ body {
   align-self: stretch;
   border: 1px solid #c8dae6;
   border-radius: 10px;
-  padding: 8px;
+  padding: 7px 8px;
   background: #f9fcff;
-  min-height: 88px;
+  min-height: 74px;
 }
 
 .pqc-anomaly-control-block {
@@ -581,8 +581,58 @@ body {
   background: transparent;
 }
 
+.pqc-anomaly-apply-panel {
+  border: 1px solid #c8dae6;
+  border-radius: 10px;
+  padding: 7px 8px;
+  background: #f9fcff;
+  min-height: 74px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.pqc-anomaly-apply-btn {
+  min-height: 34px;
+  height: 34px;
+  border: 1px solid #8eb3c8;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #edf6fb 100%);
+  box-shadow: 0 1px 5px rgba(20, 83, 114, 0.07);
+  color: #1f5f7b;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 12px;
+  text-align: left;
+  box-sizing: border-box;
+  margin-top: 1px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.pqc-anomaly-apply-btn:hover:not(:disabled) {
+  border-color: #6f9fb8;
+  box-shadow: 0 0 0 3px rgba(131, 174, 195, 0.2);
+  background: linear-gradient(180deg, #ffffff 0%, #e4f1f8 100%);
+}
+
+.pqc-anomaly-apply-btn:disabled {
+  cursor: not-allowed;
+  color: #87a3b3;
+  background: linear-gradient(180deg, #f7fafc 0%, #edf3f7 100%);
+  border-color: #c8d7e1;
+  box-shadow: none;
+}
+
+.pqc-anomaly-apply-status {
+  min-height: 0;
+  font-size: 11px;
+  color: #5a7a8d;
+  line-height: 1.35;
+}
+
 .pqc-anomaly-control-block .pqc-field-label {
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .pqc-anomaly-dropdown .Select-control {
@@ -725,6 +775,10 @@ body {
   .pqc-anomaly-control-block {
     width: 100%;
     min-width: 0;
+  }
+
+  .pqc-anomaly-apply-panel {
+    min-height: 0;
   }
 
   .pqc-anomaly-plot-area {

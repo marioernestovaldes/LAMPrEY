@@ -5,6 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
 import pandas as pd
 
+from dashboards.dashboards.dashboard.anomaly import compute_flag_proposals
 from dashboards.dashboards.dashboard.index import _with_sample_labels
 from dashboards.dashboards.dashboard.tools import (
     _normalize_max_features,
@@ -48,6 +49,53 @@ class DashboardToolsTestCase(SimpleTestCase):
             df["SampleLabel"].tolist(),
             ["duplicate.raw [rf6]", "duplicate.raw [rf7]", "unique.raw"],
         )
+
+    def test__compute_flag_proposals_returns_preview_without_mutation_side_effects(self):
+        qc_data = pd.DataFrame(
+            [
+                {
+                    "RunKey": "rf6",
+                    "RawFile": "sample-a.raw",
+                    "SampleLabel": "sample-a.raw [rf6]",
+                    "Flagged": False,
+                },
+                {
+                    "RunKey": "rf7",
+                    "RawFile": "sample-b.raw",
+                    "SampleLabel": "sample-b.raw [rf7]",
+                    "Flagged": True,
+                },
+            ]
+        )
+        predictions = pd.DataFrame(
+            {"Anomaly": [1, 0], "Anomaly_Score": [0.91, 0.12]},
+            index=["rf6", "rf7"],
+        )
+
+        proposal = compute_flag_proposals(qc_data, predictions)
+
+        self.assertEqual(proposal["run_keys_to_flag"], ["rf6"])
+        self.assertEqual(proposal["run_keys_to_unflag"], ["rf7"])
+        self.assertEqual(
+            proposal["preview_rows"],
+            [
+                {
+                    "run_key": "rf6",
+                    "sample_label": "sample-a.raw [rf6]",
+                    "raw_file": "sample-a.raw",
+                    "action": "flag",
+                    "current_flagged": False,
+                },
+                {
+                    "run_key": "rf7",
+                    "sample_label": "sample-b.raw [rf7]",
+                    "raw_file": "sample-b.raw",
+                    "action": "unflag",
+                    "current_flagged": True,
+                },
+            ],
+        )
+        self.assertEqual(qc_data["Flagged"].tolist(), [False, True])
 
 
 class DashboardRawFileActionTestCase(TestCase):

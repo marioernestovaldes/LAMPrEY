@@ -4,6 +4,7 @@ import json
 import hashlib
 import pandas as pd
 
+import dash
 from dash import html, dcc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
@@ -55,7 +56,10 @@ layout = html.Div(
                                             min=1,
                                             max=100,
                                             step=1,
-                                            marks={i: {"label": f"{i}%"} for i in [1] + list(range(5, 105, 5))},
+                                            marks={
+                                                i: {"label": f"{i}%"}
+                                                for i in [1, 25, 50, 75, 100]
+                                            },
                                             tooltip={"placement": "bottom", "always_visible": False},
                                         )
                                     ],
@@ -105,9 +109,40 @@ layout = html.Div(
                                 ),
                             ],
                         ),
+                        html.Div(
+                            className="pqc-anomaly-apply-panel",
+                            children=[
+                                html.Div("Apply changes", className="pqc-field-label"),
+                                html.Button(
+                                    "Apply proposed flag changes",
+                                    id="anomaly-apply",
+                                    className="pqc-anomaly-apply-btn",
+                                    n_clicks=0,
+                                    disabled=True,
+                                ),
+                                html.Div(
+                                    id="anomaly-apply-status",
+                                    className="pqc-anomaly-apply-status",
+                                ),
+                            ],
+                        ),
                     ],
                 ),
                 html.Div("5%", id="anomaly-fraction-value", className="pqc-hidden-trigger"),
+                html.Div(
+                    className="pqc-anomaly-preview-panel",
+                    children=[
+                        html.Div(
+                            "Preview only. Review proposed flag changes before applying them.",
+                            id="anomaly-preview-summary",
+                            className="pqc-anomaly-subtitle",
+                        ),
+                        html.Div(
+                            id="anomaly-preview-details",
+                            className="pqc-anomaly-subtitle",
+                        ),
+                    ],
+                ),
             ],
         ),
         html.Div(
@@ -143,6 +178,59 @@ layout = html.Div(
         ),
     ]
 )
+
+
+def compute_flag_proposals(qc_data, predictions):
+    if qc_data is None or qc_data.empty or predictions is None or predictions.empty:
+        return {
+            "run_keys_to_flag": [],
+            "run_keys_to_unflag": [],
+            "preview_rows": [],
+        }
+
+    frame = qc_data.copy()
+    if "Flagged" not in frame.columns:
+        frame["Flagged"] = False
+    frame["Flagged"] = frame["Flagged"].fillna(False).astype(bool)
+
+    index_col = "RunKey" if "RunKey" in frame.columns else "RawFile"
+    label_col = "SampleLabel" if "SampleLabel" in frame.columns else "RawFile"
+    frame[index_col] = frame[index_col].astype(str)
+    frame[label_col] = frame[label_col].astype(str)
+
+    prediction_index = predictions.index.astype(str)
+    anomaly_mask = predictions["Anomaly"].astype(int) == 1
+    normal_mask = predictions["Anomaly"].astype(int) == 0
+
+    currently_unflagged = set(frame.loc[~frame["Flagged"], index_col].astype(str))
+    currently_flagged = set(frame.loc[frame["Flagged"], index_col].astype(str))
+
+    run_keys_to_flag = [
+        key for key in prediction_index[anomaly_mask].tolist() if key in currently_unflagged
+    ]
+    run_keys_to_unflag = [
+        key for key in prediction_index[normal_mask].tolist() if key in currently_flagged
+    ]
+
+    preview_rows = []
+    for action, keys in (("flag", run_keys_to_flag), ("unflag", run_keys_to_unflag)):
+        for key in keys:
+            row = frame.loc[frame[index_col] == key].iloc[0]
+            preview_rows.append(
+                {
+                    "run_key": key,
+                    "sample_label": row[label_col],
+                    "raw_file": row.get("RawFile", row[label_col]),
+                    "action": action,
+                    "current_flagged": bool(row["Flagged"]),
+                }
+            )
+
+    return {
+        "run_keys_to_flag": run_keys_to_flag,
+        "run_keys_to_unflag": run_keys_to_unflag,
+        "preview_rows": preview_rows,
+    }
 
 
 def callbacks(app):
@@ -181,6 +269,7 @@ def callbacks(app):
         Output("shapley-values", "children"),
         Output("anomaly-progress-probe", "children"),
         Output("anomaly-cache-key", "children"),
+        Output("anomaly-proposed-flags", "data"),
         Input("tabs", "value"),
         Input("project", "value"),
         Input("pipeline", "value"),
@@ -237,13 +326,12 @@ def callbacks(app):
         # secondary API calls that may fail auth-context checks.
         qc_data = pd.DataFrame(scope_data or [])
         if qc_data.empty or "RawFile" not in qc_data.columns:
-            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key
-        scope_rows = qc_data.copy()
+            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
         sample_count = len(qc_data.index)
         if sample_count < min_samples_for_anomaly:
-            return None, f"insufficient-{project}-{pipeline}-{sample_count}", cache_key
+            return None, f"insufficient-{project}-{pipeline}-{sample_count}", cache_key, None
         index_col = "RunKey" if "RunKey" in qc_data.columns else "RawFile"
-        qc_data = qc_data.set_index(index_col)
+        qc_model = qc_data.set_index(index_col)
 
         # Replace column fully None → True
         if "Use Downstream" not in qc_data.columns:
@@ -257,38 +345,28 @@ def callbacks(app):
 
         try:
             predictions, df_shap = T.detect_anomalies(
-                qc_data, algorithm=algorithm, columns=columns, fraction=fraction, **params
+                qc_model, algorithm=algorithm, columns=columns, fraction=fraction, **params
             )
         except Exception as exc:
             logging.warning(f"Anomaly detection skipped for {project}/{pipeline}: {exc}")
-            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key
+            return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
 
-        # Update flags in backend
-        currently_unflagged = set(qc_data[~qc_data.Flagged].index.astype(str))
-        currently_flagged = set(qc_data[qc_data.Flagged].index.astype(str))
-        files_to_flag = [
-            str(i) for i in predictions[predictions.Anomaly == 1].index if str(i) in currently_unflagged
-        ]
-        files_to_unflag = [
-            str(i) for i in predictions[predictions.Anomaly == 0].index if str(i) in currently_flagged
-        ]
-
-        if index_col == "RunKey":
-            run_keys_to_flag = files_to_flag
-            run_keys_to_unflag = files_to_unflag
-        else:
-            run_keys_to_flag = files_to_flag
-            run_keys_to_unflag = files_to_unflag
-
-        T.set_rawfile_action(project, pipeline, run_keys_to_flag, "flag", user=user)
-        T.set_rawfile_action(project, pipeline, run_keys_to_unflag, "unflag", user=user)
+        proposal = compute_flag_proposals(qc_data, predictions)
+        proposal.update(
+            {
+                "project": project,
+                "pipeline": pipeline,
+                "fraction": int(fraction_in or 5),
+                "cache_key": cache_key,
+            }
+        )
 
         payload = (
             df_shap.to_json(orient="split")
             if df_shap is not None
             else None
         )
-        return payload, f"updated-{project}-{pipeline}-{fraction_in}", cache_key
+        return payload, f"updated-{project}-{pipeline}-{fraction_in}", cache_key, proposal
 
 
     @app.callback(
@@ -447,3 +525,94 @@ def callbacks(app):
         fig.update_yaxes(title_font=dict(size=12), tickfont=dict(size=9))
 
         return fig, config, visible_graph_style, default_empty_message, {"display": "none"}
+
+    @app.callback(
+        Output("anomaly-preview-summary", "children"),
+        Output("anomaly-preview-details", "children"),
+        Output("anomaly-apply", "disabled"),
+        Input("anomaly-proposed-flags", "data"),
+        Input("tabs", "value"),
+    )
+    def render_proposed_flag_changes(proposal, tab):
+        if tab != "anomaly":
+            raise PreventUpdate
+
+        if not proposal:
+            return (
+                "Preview only. No anomaly flag changes are currently proposed.",
+                "",
+                True,
+            )
+
+        preview_rows = list(proposal.get("preview_rows") or [])
+        n_flag = len(proposal.get("run_keys_to_flag") or [])
+        n_unflag = len(proposal.get("run_keys_to_unflag") or [])
+        total = len(preview_rows)
+        if total == 0:
+            return (
+                "Preview only. The current anomaly model does not suggest any flag changes.",
+                "Manual flags are unchanged until you explicitly apply a proposal.",
+                True,
+            )
+
+        preview_lines = []
+        for row in preview_rows[:6]:
+            action_label = "Flag" if row.get("action") == "flag" else "Unflag"
+            preview_lines.append(
+                html.Div(f"{action_label}: {row.get('sample_label', row.get('run_key', 'sample'))}")
+            )
+        if total > 6:
+            preview_lines.append(html.Div(f"...and {total - 6} more proposed change(s)."))
+
+        summary = (
+            f"Preview only: {n_flag} sample(s) would be flagged and "
+            f"{n_unflag} sample(s) would be unflagged."
+        )
+        details = html.Div(
+            [
+                html.Div(
+                    "Manual flags remain unchanged until you click Apply. "
+                    "Applying will overwrite current flag states for the listed samples."
+                ),
+                html.Div(preview_lines),
+            ]
+        )
+        return summary, details, False
+
+    @app.callback(
+        Output("anomaly-apply-status", "children"),
+        Output("anomaly-apply-refresh", "data"),
+        Input("anomaly-apply", "n_clicks"),
+        State("anomaly-proposed-flags", "data"),
+        State("project", "value"),
+        State("pipeline", "value"),
+    )
+    def apply_proposed_flag_changes(n_clicks, proposal, project, pipeline, **kwargs):
+        if not n_clicks:
+            raise PreventUpdate
+        if not proposal:
+            return "No anomaly flag changes to apply.", dash.no_update
+        if project != proposal.get("project") or pipeline != proposal.get("pipeline"):
+            return "Scope changed. Recompute anomaly preview before applying.", dash.no_update
+
+        user = kwargs.get("user")
+        if user is None:
+            return "Missing user context.", dash.no_update
+
+        run_keys_to_flag = list(proposal.get("run_keys_to_flag") or [])
+        run_keys_to_unflag = list(proposal.get("run_keys_to_unflag") or [])
+
+        if run_keys_to_flag:
+            response = T.set_rawfile_action(project, pipeline, run_keys_to_flag, "flag", user=user)
+            if response.get("status") != "success":
+                return response.get("status", "Could not apply anomaly flags."), dash.no_update
+        if run_keys_to_unflag:
+            response = T.set_rawfile_action(project, pipeline, run_keys_to_unflag, "unflag", user=user)
+            if response.get("status") != "success":
+                return response.get("status", "Could not apply anomaly flags."), dash.no_update
+
+        total = len(run_keys_to_flag) + len(run_keys_to_unflag)
+        return (
+            f"Applied {total} anomaly flag change(s). The QC scope has been refreshed.",
+            json.dumps({"applied": n_clicks, "project": project, "pipeline": pipeline}),
+        )
