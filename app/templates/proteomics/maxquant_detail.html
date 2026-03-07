@@ -98,6 +98,14 @@
     </div>
   {% endif %}
 
+  {% if data_warnings %}
+    <div class="processing-status-note note-info">
+      {% for warning in data_warnings %}
+        <div>{{ warning }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   {% for section in figure_sections %}
     <hr />
     <h4 class="figure-section-title">{{ section.title }}</h4>

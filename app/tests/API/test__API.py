@@ -464,3 +464,34 @@ class ApiTestCase(TestCase):
             )
 
         assert fns == ["fake-2.raw", "fake-3.raw"], fns
+
+    def test__get_protein_quant_fn_skips_schema_parse_failures(self):
+        result = Result.objects.get(raw_file=self.raw_file)
+        result.output_dir_maxquant.mkdir(parents=True, exist_ok=True)
+        (result.output_dir_maxquant / "proteinGroups.txt").write_text(
+            "\t".join(
+                [
+                    "Majority protein IDs",
+                    "Fasta headers",
+                    "Intensity",
+                    "Reporter intensity corrected 1 sample",
+                ]
+            )
+            + "\n"
+            + "\t".join(["P1", "header-1", "1000", "10"])
+            + "\n",
+            encoding="utf-8",
+        )
+
+        fns = get_protein_quant_fn(
+            self.project.slug,
+            self.pipeline.slug,
+            data_range=10,
+            user=self.user,
+        )
+
+        assert fns == [], fns
+        assert result.maxquant_status == "failed"
+        assert "MaxQuant parse error" in (
+            result.output_dir_maxquant / "maxquant.err"
+        ).read_text(encoding="utf-8")

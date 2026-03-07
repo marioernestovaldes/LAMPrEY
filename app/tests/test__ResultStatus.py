@@ -233,6 +233,47 @@ class ResultStatusTestCase(TestCase):
         self.assertEqual(details[0]["stage"], "maxquant")
         self.assertIn("Unhandled Exception", details[0]["message"])
 
+    def test_create_protein_quant_schema_parse_error_marks_maxquant_failed(self):
+        self._write_file(
+            self.result.output_dir_rawtools
+            / f"{self.raw_file.name}_Ms_TIC_chromatogram.txt",
+            "ok",
+        )
+        self._write_file(
+            self.result.output_dir_rawtools
+            / f"{self.raw_file.name}_Ms2_TIC_chromatogram.txt",
+            "ok",
+        )
+        self._write_file(self.result.output_dir_rawtools_qc / "QcDataTable.csv", "ok")
+        self._write_file(self.result.output_dir_maxquant / "time.txt", "00:05.00")
+        self._write_file(
+            self.result.output_dir_maxquant / "proteinGroups.txt",
+            "\t".join(
+                [
+                    "Majority protein IDs",
+                    "Fasta headers",
+                    "Intensity",
+                    "Reporter intensity corrected 1 sample",
+                ]
+            )
+            + "\n"
+            + "\t".join(["P1", "header-1", "1000", "10"])
+            + "\n",
+        )
+
+        actual = self.result.create_protein_quant()
+
+        self.assertIsNone(actual)
+        self.assertEqual(self.result.maxquant_status, "failed")
+        self.assertEqual(self.result.overall_status, "failed")
+        self.assertIn(
+            "MaxQuant parse error",
+            (self.result.output_dir_maxquant / "maxquant.err").read_text(
+                encoding="utf-8"
+            ),
+        )
+        self.assertIn("missing required columns", self.result.stage_error_details[0]["message"])
+
     @patch("maxquant.Result.rawtools_qc.delay")
     @patch("maxquant.Result.rawtools_metrics.delay")
     def test_rawtools_rerun_flag_is_forwarded_to_tasks(

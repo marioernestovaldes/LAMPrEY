@@ -26,7 +26,7 @@ from django.utils.html import mark_safe
 from celery import current_app
 
 from omics.proteomics.tools import load_rawtools_data_from, load_maxquant_data_from
-from omics.proteomics.maxquant.MaxquantReader import MaxquantReader
+from omics.proteomics.maxquant.MaxquantReader import MaxquantReader, MaxquantParseError
 
 from .tasks import rawtools_metrics, rawtools_qc, run_maxquant
 from .defaults import ensure_bundled_maxquant_installed
@@ -49,6 +49,7 @@ class Result(models.Model):
         "rawtools_metrics": ("rawtools_metrics_pid", "rawtools_metrics_pgid"),
         "rawtools_qc": ("rawtools_qc_pid", "rawtools_qc_pgid"),
     }
+    MAXQUANT_PARSE_ERROR_MARKER = "MaxQuant parse error"
 
     class Meta:
         verbose_name = _("Result")
@@ -297,9 +298,13 @@ class Result(models.Model):
     def get_data_from_file(self, fn="proteinGroups.txt"):
         abs_fn = self.output_dir_maxquant / fn
         if abs_fn.is_file():
-            df = MaxquantReader(remove_contaminants=False, remove_reverse=False).read(
-                abs_fn
-            )
+            try:
+                df = MaxquantReader(
+                    remove_contaminants=False, remove_reverse=False
+                ).read(abs_fn)
+            except MaxquantParseError as exc:
+                self._record_maxquant_parse_error(abs_fn, exc)
+                return None
             if df is None:
                 return None
             df["RawFile"] = str(self.raw_file.name)
@@ -565,6 +570,20 @@ class Result(models.Model):
                 return True
         return False
 
+    def _record_maxquant_parse_error(self, source_fn, exc):
+        err_fn = self.output_dir_maxquant / "maxquant.err"
+        err_fn.parent.mkdir(parents=True, exist_ok=True)
+        message = (
+            f"{self.MAXQUANT_PARSE_ERROR_MARKER}: failed to read {P(source_fn).name}\n"
+            f"{exc}\n"
+        )
+        try:
+            err_fn.write_text(message, encoding="utf-8")
+        except OSError:
+            logging.exception("Could not persist MaxQuant parse error for %s", source_fn)
+        logging.warning("%s for result %s: %s", self.MAXQUANT_PARSE_ERROR_MARKER, self.pk, exc)
+        self._invalidate_status_cache()
+
     @classmethod
     def _started_but_stale(
         cls, task_state, activity_paths, lookback_seconds=600
@@ -710,7 +729,11 @@ class Result(models.Model):
         err_fn = self.output_dir_maxquant / "maxquant.err"
         out_fn = self.output_dir_maxquant / "maxquant.out"
         done_fn = self.output_dir_maxquant / "time.txt"
-        fatal_error_markers = ("Unhandled Exception", "System.Exception")
+        fatal_error_markers = (
+            "Unhandled Exception",
+            "System.Exception",
+            self.MAXQUANT_PARSE_ERROR_MARKER,
+        )
         started_stale_seconds = int(
             getattr(settings, "RESULT_STATUS_MAXQUANT_STALE_SECONDS", 21600)
         )
@@ -1053,7 +1076,7 @@ class Result(models.Model):
         lines = [line.rstrip() for line in text.splitlines() if line.strip()]
         if not lines:
             return ""
-        markers = ("Unhandled Exception", "System.Exception")
+        markers = ("Unhandled Exception", "System.Exception", cls.MAXQUANT_PARSE_ERROR_MARKER)
         for idx, line in enumerate(lines):
             if any(marker in line for marker in markers):
                 start = max(0, idx - 1)

@@ -38,12 +38,17 @@ def main():
     from maxquant.defaults import ensure_bundled_maxquant_installed
     from maxquant.tasks import _run_cancelable_process
     from maxquant.rawtools import DEFAULT_RAWTOOLS_ARGS
+    from main.asgi import application as asgi_application
+    from main.wsgi import application as wsgi_application
     from omics.proteomics.rawtools.quality_control import (
         rawtools_metrics_spec,
         rawtools_qc_spec,
     )
 
     _log("starting runtime smoke check")
+    _assert(asgi_application is not None, "ASGI application import failed.")
+    _assert(wsgi_application is not None, "WSGI application import failed.")
+    _log("ASGI/WSGI entrypoint import probe passed")
     bundled = ensure_bundled_maxquant_installed()
     _assert(bundled is not None and bundled.is_file(), "Bundled MaxQuant executable missing.")
     _log(f"bundled MaxQuant executable: {bundled}")

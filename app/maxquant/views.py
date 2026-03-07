@@ -6,6 +6,7 @@ import pandas as pd
 import logging
 import numpy as np
 import re
+import csv
 try:
     import polars as pl
 except Exception:  # pragma: no cover - fallback when dependency is unavailable
@@ -299,19 +300,21 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
             "|".join(freshness_parts).encode("utf-8")
         ).hexdigest()
         cache_key = (
-            f"mq-detail-v3:{mq_run.pk}:{mq_run.input_source}:{freshness_token}"
+            f"mq-detail-v4:{mq_run.pk}:{mq_run.input_source}:{freshness_token}"
         )
         cached = cache.get(cache_key)
         if cached:
             context["figures"] = cached["figures"]
             context["figure_sections"] = cached["figure_sections"]
             context["summary_stats"] = cached["summary_stats"]
+            context["data_warnings"] = cached.get("data_warnings", [])
             context["home_title"] = settings.HOME_TITLE
             return context
 
         figures = []
         summary_stats = []
         figure_sections = []
+        data_warnings = []
         plot_help_by_title = {
             "MS TIC chromatogram": "Total ion current over retention time "
             "for MS1 scans.",
@@ -417,6 +420,10 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                 }
             )
 
+        def add_data_warning(message):
+            if message not in data_warnings:
+                data_warnings.append(message)
+
         def channel_sort_key(col_name):
             base = col_name
             if col_name.startswith("Reporter intensity corrected "):
@@ -493,7 +500,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                         channel_by_number[n] for n in sorted(channel_by_number)
                     ]
             if not channel_cols:
-                return
+                return False
 
             intensity_long = (
                 df[channel_cols]
@@ -503,7 +510,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
             )
             intensity_long = intensity_long[intensity_long["Intensity"] > 0]
             if intensity_long.empty:
-                return
+                return False
 
             channel_order = sorted(channel_cols, key=channel_sort_key)
             intensity_long["Channel"] = pd.Categorical(
@@ -557,6 +564,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
             )
             fig.update_yaxes(automargin=True, rangemode="tozero")
             add_figure(fig)
+            return True
 
         def summary_value(summary_df, *candidates):
             """Return first matching summary value using tolerant
@@ -575,20 +583,81 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                     return summary_df.loc[0, normalized[key]]
             return None
 
+        def detect_separator(fn, default="\t"):
+            try:
+                with open(fn, "r", encoding="utf-8", errors="ignore", newline="") as handle:
+                    sample = handle.read(8192)
+            except OSError:
+                return default
+            if not sample:
+                return default
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters="\t,;")
+                return dialect.delimiter
+            except csv.Error:
+                header = sample.splitlines()[0] if sample.splitlines() else sample
+                if header.count(",") > header.count("\t"):
+                    return ","
+                if header.count(";") > header.count("\t"):
+                    return ";"
+                return default
+
         def read_tsv_selected(fn, exact_cols=None, prefix_cols=None):
             exact_cols = exact_cols or []
             prefix_cols = prefix_cols or []
             available_cols = []
+            sep = detect_separator(fn)
+
+            def csv_fallback(selected_cols):
+                if not selected_cols:
+                    return pd.DataFrame()
+                try:
+                    with open(
+                        fn,
+                        "r",
+                        encoding="utf-8",
+                        errors="ignore",
+                        newline="",
+                    ) as handle:
+                        reader = csv.reader(handle, delimiter=sep)
+                        header = next(reader, None)
+                        if not header:
+                            return pd.DataFrame()
+                        index_map = {
+                            col: idx
+                            for idx, col in enumerate(header)
+                            if col in selected_cols
+                        }
+                        rows = []
+                        for row in reader:
+                            if not row:
+                                continue
+                            rows.append(
+                                {
+                                    col: row[idx] if idx < len(row) else None
+                                    for col, idx in index_map.items()
+                                }
+                            )
+                except OSError:
+                    return pd.DataFrame()
+                return pd.DataFrame(rows, columns=selected_cols)
+
             if pl is not None:
                 try:
                     available_cols = list(
-                        pl.read_csv(fn, separator="\t", n_rows=0).columns
+                        pl.read_csv(fn, separator=sep, n_rows=0).columns
                     )
                 except Exception:
                     available_cols = []
             if not available_cols:
                 try:
-                    header = pd.read_csv(fn, sep="\t", nrows=0)
+                    header = pd.read_csv(
+                        fn,
+                        sep=sep,
+                        nrows=0,
+                        engine="python",
+                        on_bad_lines="skip",
+                    )
                     available_cols = list(header.columns)
                 except Exception:
                     return pd.DataFrame()
@@ -618,14 +687,34 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                 except Exception:
                     pass
             try:
-                return pd.read_csv(
+                df = pd.read_csv(
                     fn,
-                    sep="\t",
+                    sep=sep,
                     usecols=selected,
                     low_memory=False,
+                    engine="c",
                 )
+                if not df.empty:
+                    return df
             except Exception:
-                return pd.DataFrame()
+                df = pd.DataFrame()
+            try:
+                python_df = pd.read_csv(
+                    fn,
+                    sep=sep,
+                    usecols=selected,
+                    low_memory=False,
+                    engine="python",
+                    on_bad_lines="skip",
+                )
+                if not python_df.empty:
+                    return python_df
+            except Exception:
+                pass
+            fallback_df = csv_fallback(selected)
+            if not fallback_df.empty:
+                return fallback_df
+            return df
 
         fn = f"{path_rt}/{raw_fn}_Ms_TIC_chromatogram.txt"
         df_ms = pd.DataFrame()
@@ -671,7 +760,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
 
         fn = f"{path}/summary.txt"
         if isfile(fn):
-            summary = pd.read_csv(fn, sep="\t")
+            summary = pd.read_csv(fn, sep=detect_separator(fn))
             msms_submitted = summary_value(
                 summary, "MS/MS submitted", "MS/MS Submitted"
             )
@@ -893,15 +982,18 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                     )
                     add_figure(fig)
 
-            add_channel_intensity_boxplot(
+            if not add_channel_intensity_boxplot(
                 peptides, "Channel intensity distribution (peptides)"
-            )
+            ):
+                add_data_warning(
+                    "Skipped peptide channel-intensity plot because no usable peptide reporter-intensity columns were available."
+                )
 
         fn = f"{path}/proteinGroups.txt"
         if isfile(fn):
             proteins = read_tsv_selected(
                 fn,
-                exact_cols=["Peptides", "Score"],
+                exact_cols=["Peptides", "Score", "Intensity"],
                 prefix_cols=[
                     "Reporter intensity corrected ",
                     "Reporter intensity ",
@@ -910,9 +1002,16 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
             )
             summary_stats.append({"label": "Protein groups", "value": len(proteins)})
 
-            add_channel_intensity_boxplot(
+            if proteins.empty:
+                add_data_warning(
+                    "Protein-group data could not be parsed for plotting. Remaining run metrics are shown from the files that were still readable."
+                )
+            elif not add_channel_intensity_boxplot(
                 proteins, "Channel intensity distribution (protein groups)"
-            )
+            ):
+                add_data_warning(
+                    "Skipped protein-group channel-intensity plot because no usable protein-group intensity columns were available."
+                )
 
             if "Peptides" in proteins.columns:
                 peptides_capped = proteins["Peptides"].fillna(0).clip(upper=25)
@@ -926,6 +1025,10 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                     xbins={"start": 0.5, "end": 25.5, "size": 1},
                 )
                 add_figure(fig)
+            elif not proteins.empty:
+                add_data_warning(
+                    "Skipped protein-group peptide-count plot because the `Peptides` column is missing."
+                )
 
             if "Score" in proteins.columns:
                 fig = histograms(
@@ -935,6 +1038,10 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                     nbinsx=50,
                 )
                 add_figure(fig)
+            elif not proteins.empty:
+                add_data_warning(
+                    "Skipped Andromeda score plot because the `Score` column is missing from `proteinGroups.txt`."
+                )
 
         grouped = {section: [] for section in section_order}
         for figure in figures:
@@ -954,6 +1061,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
         context["figures"] = figures
         context["figure_sections"] = figure_sections
         context["summary_stats"] = summary_stats
+        context["data_warnings"] = data_warnings
         context["home_title"] = settings.HOME_TITLE
         cache.set(
             cache_key,
@@ -961,6 +1069,7 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
                 "figures": figures,
                 "figure_sections": figure_sections,
                 "summary_stats": summary_stats,
+                "data_warnings": data_warnings,
             },
             timeout=600,
         )

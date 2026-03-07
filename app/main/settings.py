@@ -126,7 +126,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "main.wsgi.application"
-ASGI_APPLICATION = "mail.routing.application"
+ASGI_APPLICATION = "main.asgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/3.1/ref/settings/#databases

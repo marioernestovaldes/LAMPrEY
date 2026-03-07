@@ -1,6 +1,7 @@
 import pandas as pd
 import logging
 from pathlib import Path as P
+import csv
 
 
 MAXQUANT_STANDARDS = {
@@ -99,19 +100,80 @@ MAXQUANT_STANDARDS = {
 }
 
 
+class MaxquantParseError(ValueError):
+    pass
+
+
 class MaxquantReader:
+    REQUIRED_PROTEIN_GROUP_COLUMNS = [
+        "Majority protein IDs",
+        "Fasta headers",
+        "Score",
+        "Intensity",
+    ]
+
+    OPTIONAL_PROTEIN_GROUP_COLUMNS = [
+        "Number of proteins",
+        "Peptides",
+        "Razor + unique peptides",
+        "Unique peptides",
+        "Sequence coverage [%]",
+        "Unique + razor sequence coverage [%]",
+        "Unique sequence coverage [%]",
+        "Mol. weight [kDa]",
+        "Sequence length",
+        "Sequence lengths",
+        "Q-value",
+        "MS/MS count",
+        "Only identified by site",
+        "Reverse",
+        "Potential contaminant",
+        "id",
+        "Peptide IDs",
+        "Peptide is razor",
+        "Mod. peptide IDs",
+        "Evidence IDs",
+        "MS/MS IDs",
+        "Best MS/MS",
+        "Oxidation (M) site IDs",
+        "Oxidation (M) site positions",
+    ]
+
     def __init__(self, standardize=True, remove_contaminants=True, remove_reverse=True):
         self.standards = MAXQUANT_STANDARDS
         self.standardize = standardize
         self.remove_con = remove_contaminants
         self.remove_rev = remove_reverse
 
+    @staticmethod
+    def _detect_separator(fn, default="\t"):
+        try:
+            with open(fn, "r", encoding="utf-8", errors="ignore", newline="") as handle:
+                sample = handle.read(8192)
+        except OSError:
+            return default
+        if not sample:
+            return default
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters="\t,;")
+            return dialect.delimiter
+        except csv.Error:
+            header = sample.splitlines()[0] if sample.splitlines() else sample
+            if header.count(",") > header.count("\t"):
+                return ","
+            if header.count(";") > header.count("\t"):
+                return ";"
+            return default
+
     def read(self, fn):
         assert P(fn).is_file(), fn
         name = P(fn).name
+        sep = self._detect_separator(fn)
 
         try:
-            df = pd.read_csv(fn, sep="\t", low_memory=False, na_filter=None)
+            df = pd.read_csv(fn, sep=sep, low_memory=False, na_filter=None)
+        except MaxquantParseError:
+            raise
         except Exception as e:
             logging.warning(f"MaxQuantReader: {e}")
             return None
@@ -125,47 +187,27 @@ class MaxquantReader:
         self,
         df,
     ):
-
-        standard_cols = [
-            "Majority protein IDs",
-            "Fasta headers",
-            "Number of proteins",
-            "Peptides",
-            "Razor + unique peptides",
-            "Unique peptides",
-            "Sequence coverage [%]",
-            "Unique + razor sequence coverage [%]",
-            "Unique sequence coverage [%]",
-            "Mol. weight [kDa]",
-            "Sequence length",
-            "Sequence lengths",
-            "Q-value",
-            "Score",
-            "Intensity",
-            "MS/MS count",
-            "Only identified by site",
-            "Reverse",
-            "Potential contaminant",
-            "id",
-            "Peptide IDs",
-            "Peptide is razor",
-            "Mod. peptide IDs",
-            "Evidence IDs",
-            "MS/MS IDs",
-            "Best MS/MS",
-            "Oxidation (M) site IDs",
-            "Oxidation (M) site positions",
+        missing_required = [
+            col for col in self.REQUIRED_PROTEIN_GROUP_COLUMNS if col not in df.columns
         ]
+        if missing_required:
+            missing = ", ".join(missing_required)
+            raise MaxquantParseError(
+                f"proteinGroups.txt is missing required columns: {missing}"
+            )
 
         quant_cols = df.filter(regex="Reporter intensity corrected").columns.to_list()
+        optional_cols = [
+            col for col in self.OPTIONAL_PROTEIN_GROUP_COLUMNS if col in df.columns
+        ]
 
-        df = df[standard_cols + quant_cols].rename(
+        df = df[self.REQUIRED_PROTEIN_GROUP_COLUMNS + optional_cols + quant_cols].rename(
             columns={c: " ".join(i for i in c.split(" ")[:4]) for c in quant_cols}
         )
 
-        if self.remove_con:
+        if self.remove_con and "Potential contaminant" in df.columns:
             df = df[df["Potential contaminant"] != "+"]
         if self.remove_rev:
-            df = df[~df["Majority protein IDs"].str.contains("REV_")]
+            df = df[~df["Majority protein IDs"].astype(str).str.contains("REV_", na=False)]
 
         return df
