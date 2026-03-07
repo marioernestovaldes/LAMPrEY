@@ -119,6 +119,7 @@ layout = html.Div(
         html.Div(
             className="pqc-layout",
             children=[
+                html.Div(id="pqc-dashboard-alert"),
                 html.Div(
                     className="pqc-main-grid",
                     children=[
@@ -350,7 +351,8 @@ def render_content(tab):
 @app.callback(Output("project", "options"), [Input("B_update", "n_clicks")])
 def populate_projects(_n_clicks, **kwargs):
     user = kwargs.get("user")
-    return T.get_projects(user=user)
+    result = T.get_projects(user=user)
+    return T.dashboard_result_data(result, [])
 
 
 @app.callback(
@@ -370,7 +372,7 @@ def pick_default_project(options, current_value):
 @app.callback(Output("pipeline", "options"), [Input("project", "value")])
 def populate_pipelines(project, **kwargs):
     user = kwargs.get("user")
-    _json = T.get_pipelines(project, user=user)
+    _json = T.dashboard_result_data(T.get_pipelines(project, user=user), [])
     if len(_json) == 0:
         return []
     else:
@@ -434,6 +436,7 @@ def sync_scope_uploader_value(options, current_value):
     Output("qc-uploader-options", "data"),
     Output("pqc-scope-user-field", "style"),
     Output("scope-uploader", "options"),
+    Output("pqc-dashboard-alert", "children"),
     Input("project", "value"),
     Input("pipeline", "value"),
     Input("scope-uploader", "value"),
@@ -465,19 +468,32 @@ def refresh_qc_table(
         scope_style = {"display": "block"} if is_admin_session else {"display": "none"}
         return (
             T.table_from_dataframe(pd.DataFrame(), id="qc-table", row_selectable="multi"),
-            [],
+            {"rows": [], "error": None, "status": "no_data"},
             empty_options,
             scope_style,
             empty_options,
+            None,
         )
     optional_columns = optional_columns or C.qc_columns_default
-    data = T.get_qc_data(
+    data_result = T.get_qc_data(
         project=project,
         pipeline=pipeline,
         columns=None,
         data_range=None,
         user=user,
     )
+    data = T.dashboard_result_data(data_result, {})
+    scope_error = data_result.get("error") if isinstance(data_result, dict) else None
+    alert = None
+    if scope_error:
+        alert = dbc.Alert(
+            [
+                html.Strong(scope_error.get("message", "Dashboard data error")),
+                html.Div(scope_error.get("detail", "")),
+            ],
+            color="danger",
+            className="pqc-dashboard-alert",
+        )
 
     if data is None:
         data = {}
@@ -506,10 +522,11 @@ def refresh_qc_table(
         scope_style = {"display": "block"} if is_admin_session else {"display": "none"}
         return (
             T.table_from_dataframe(df, id="qc-table", row_selectable="multi"),
-            [],
+            {"rows": [], "error": scope_error, "status": data_result.get("status", "no_data")},
             empty_options,
             scope_style,
             empty_options,
+            alert,
         )
 
     tmt_missing_cols = _detected_tmt_qc_columns(df.columns)
@@ -608,10 +625,13 @@ def refresh_qc_table(
     for value in uploader_values:
         _add_uploader_option(value, value)
 
-    api_uploaders = T.get_pipeline_uploaders(
+    api_uploaders = T.dashboard_result_data(
+        T.get_pipeline_uploaders(
         project=project,
         pipeline=pipeline,
         user=user,
+        ),
+        [],
     )
     for option in api_uploaders:
         _add_uploader_option(option.get("label", ""), option.get("value", ""))
@@ -642,10 +662,11 @@ def refresh_qc_table(
             row_selectable="multi",
             hidden_columns=hidden_columns,
         ),
-        records,
+        {"rows": records, "error": scope_error, "status": data_result.get("status", "ok")},
         uploader_options,
         scope_style,
         uploader_options,
+        alert,
     )
 
 
@@ -663,7 +684,7 @@ def sync_qc_table_columns(scope_data, current_values):
             values = list(C.qc_columns_default)
         return list_to_dropdown_options(base_options), values
 
-    df = pd.DataFrame(scope_data or [])
+    df = pd.DataFrame(T.dashboard_rows(scope_data))
     if df.empty:
         values = [v for v in list(current_values or C.qc_columns_default) if v in base_options]
         if not values:
@@ -717,7 +738,7 @@ def update_kpis(data, project, pipeline):
             "--",
             f"0 samples in {project_label} / {pipeline_label}",
         )
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(T.dashboard_rows(data))
     if df.empty:
         return (
             "0",

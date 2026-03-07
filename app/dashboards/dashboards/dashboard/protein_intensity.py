@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dash import dcc, html
+import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
@@ -66,6 +67,7 @@ layout = html.Div(
             id="protein-intensity-empty-state",
             className="pqc-empty-state",
         ),
+        html.Div(id="protein-intensity-alert"),
         dcc.Loading(
             type="circle",
             children=[
@@ -83,11 +85,13 @@ def callbacks(app):
     @app.callback(
         Output("protein-intensity-proteins", "options"),
         Output("protein-intensity-proteins", "value"),
+        Output("protein-intensity-alert", "children", allow_duplicate=True),
         Input("tabs", "value"),
         Input("project", "value"),
         Input("pipeline", "value"),
         Input("qc-scope-data", "data"),
         State("protein-intensity-proteins", "value"),
+        prevent_initial_call=True,
     )
     def update_protein_dropdown(tab, project, pipeline, scope_data, current_values, **kwargs):
         current_values = list(current_values or [])
@@ -96,15 +100,15 @@ def callbacks(app):
         if not project or not pipeline:
             return [], []
 
-        scope_df = pd.DataFrame(scope_data or [])
+        scope_df = pd.DataFrame(T.dashboard_rows(scope_data))
         if scope_df.empty or ("RawFile" not in scope_df.columns):
-            return [], []
+            return [], [], None
         raw_files = scope_df["RawFile"].dropna().astype(str).tolist()
         if len(raw_files) == 0:
-            return [], []
+            return [], [], None
 
         user = kwargs.get("user")
-        protein_data = T.get_protein_names(
+        protein_result = T.get_protein_names(
             project=project,
             pipeline=pipeline,
             remove_contaminants=True,
@@ -112,10 +116,19 @@ def callbacks(app):
             raw_files=raw_files,
             user=user,
         )
-
-        protein_df = pd.DataFrame(protein_data or {})
+        protein_error = protein_result.get("error") if isinstance(protein_result, dict) else None
+        protein_df = pd.DataFrame(T.dashboard_result_data(protein_result, {}))
         if protein_df.empty or ("protein_names" not in protein_df.columns):
-            return [], []
+            alert = None
+            if protein_error:
+                alert = dbc.Alert(
+                    [
+                        html.Strong(protein_error.get("message", "Protein name load failed")),
+                        html.Div(protein_error.get("detail", "")),
+                    ],
+                    color="danger",
+                )
+            return [], [], alert
 
         protein_values = (
             protein_df["protein_names"]
@@ -127,7 +140,7 @@ def callbacks(app):
         options = [{"label": p, "value": p} for p in protein_values]
         value_set = {opt["value"] for opt in options}
         selected = [v for v in current_values if v in value_set]
-        return options, selected
+        return options, selected, None
 
     @app.callback(
         Output("protein-intensity-figure", "figure"),
@@ -135,12 +148,14 @@ def callbacks(app):
         Output("protein-intensity-figure", "style"),
         Output("protein-intensity-empty-state", "children"),
         Output("protein-intensity-empty-state", "style"),
+        Output("protein-intensity-alert", "children", allow_duplicate=True),
         Input("tabs", "value"),
         Input("protein-intensity-proteins", "value"),
         Input("protein-intensity-x", "value"),
         Input("project", "value"),
         Input("pipeline", "value"),
         Input("qc-scope-data", "data"),
+        prevent_initial_call="initial_duplicate",
     )
     def plot_protein_intensity(
         tab,
@@ -156,18 +171,30 @@ def callbacks(app):
         shown_style = {**GRAPH_STYLE, "display": "block"}
 
         if tab != "protein_intensity":
-            return go.Figure(), config, hidden_style, "Select proteins to visualize intensity distributions.", {"display": "none"}
+            return go.Figure(), config, hidden_style, "Select proteins to visualize intensity distributions.", {"display": "none"}, None
         if not project or not pipeline:
-            return go.Figure(), config, hidden_style, "Select a project and pipeline first.", {"display": "flex"}
+            return go.Figure(), config, hidden_style, "Select a project and pipeline first.", {"display": "flex"}, None
 
         proteins = [str(p).strip() for p in (proteins or []) if str(p).strip()]
         proteins = list(dict.fromkeys(proteins))
         if len(proteins) == 0:
-            return go.Figure(), config, hidden_style, "Select at least one protein.", {"display": "flex"}
+            return go.Figure(), config, hidden_style, "Select at least one protein.", {"display": "flex"}, None
 
-        scope_df = pd.DataFrame(scope_data or [])
+        scope_df = pd.DataFrame(T.dashboard_rows(scope_data))
         if scope_df.empty or ("RawFile" not in scope_df.columns):
-            return go.Figure(), config, hidden_style, "No scoped samples available for this view.", {"display": "flex"}
+            scope_error = T.dashboard_scope_error(scope_data)
+            alert = None
+            message = "No scoped samples available for this view."
+            if scope_error:
+                alert = dbc.Alert(
+                    [
+                        html.Strong(scope_error.get("message", "QC scope load failed")),
+                        html.Div(scope_error.get("detail", "")),
+                    ],
+                    color="danger",
+                )
+                message = "Protein intensity view is unavailable because scoped QC data could not be loaded."
+            return go.Figure(), config, hidden_style, message, {"display": "flex"}, alert
 
         scope_df["RawFile"] = scope_df["RawFile"].astype(str)
         scope_df = scope_df.drop_duplicates(subset=["RawFile"]).reset_index(drop=True)
@@ -185,7 +212,7 @@ def callbacks(app):
 
         raw_files = scope_df["RawFile"].tolist()
         user = kwargs.get("user")
-        payload = T.get_protein_groups(
+        payload_result = T.get_protein_groups(
             project=project,
             pipeline=pipeline,
             protein_names=proteins,
@@ -194,15 +221,28 @@ def callbacks(app):
             raw_files=raw_files,
             user=user,
         )
+        payload_error = payload_result.get("error") if isinstance(payload_result, dict) else None
+        payload = T.dashboard_result_data(payload_result, {})
         data_df = pd.DataFrame(payload) if payload else pd.DataFrame()
         if data_df.empty:
-            return go.Figure(), config, hidden_style, "No protein intensity values found for the current selection.", {"display": "flex"}
+            alert = None
+            message = "No protein intensity values found for the current selection."
+            if payload_error:
+                alert = dbc.Alert(
+                    [
+                        html.Strong(payload_error.get("message", "Protein intensity load failed")),
+                        html.Div(payload_error.get("detail", "")),
+                    ],
+                    color="danger",
+                )
+                message = "Protein intensity data could not be loaded for the current selection."
+            return go.Figure(), config, hidden_style, message, {"display": "flex"}, alert
 
         protein_col = "Majority protein IDs"
         if protein_col not in data_df.columns:
-            return go.Figure(), config, hidden_style, "Protein IDs were not found in the intensity data.", {"display": "flex"}
+            return go.Figure(), config, hidden_style, "Protein IDs were not found in the intensity data.", {"display": "flex"}, None
         if "RawFile" not in data_df.columns:
-            return go.Figure(), config, hidden_style, "Sample names were not found in the intensity data.", {"display": "flex"}
+            return go.Figure(), config, hidden_style, "Sample names were not found in the intensity data.", {"display": "flex"}, None
 
         intensity_cols = [
             col
@@ -210,7 +250,7 @@ def callbacks(app):
             if isinstance(col, str) and col.startswith("Reporter intensity corrected ")
         ]
         if len(intensity_cols) == 0:
-            return go.Figure(), config, hidden_style, "No reporter intensity columns are available for these proteins.", {"display": "flex"}
+            return go.Figure(), config, hidden_style, "No reporter intensity columns are available for these proteins.", {"display": "flex"}, None
 
         long_df = data_df[["RawFile", protein_col] + intensity_cols].melt(
             id_vars=["RawFile", protein_col],
@@ -406,4 +446,4 @@ def callbacks(app):
             title_standoff=16,
         )
 
-        return fig, config, shown_style, "", {"display": "none"}
+        return fig, config, shown_style, "", {"display": "none"}, None

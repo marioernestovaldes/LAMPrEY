@@ -145,7 +145,7 @@ def callbacks(app):
         x = x_in or "RawFile"
         selected_metric = metric_in or "N_peptides"
 
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(T.dashboard_rows(data))
         if df.empty:
             return (
                 go.Figure(),

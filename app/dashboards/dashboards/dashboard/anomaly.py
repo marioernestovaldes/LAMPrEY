@@ -324,7 +324,7 @@ def callbacks(app):
 
         # Use already loaded QC scope data from dashboard state to avoid
         # secondary API calls that may fail auth-context checks.
-        qc_data = pd.DataFrame(scope_data or [])
+        qc_data = pd.DataFrame(T.dashboard_rows(scope_data))
         if qc_data.empty or "RawFile" not in qc_data.columns:
             return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
         sample_count = len(qc_data.index)
@@ -404,7 +404,7 @@ def callbacks(app):
         if tab != "anomaly":
             return {}, config, hidden_graph_style, default_empty_message, {"display": "none"}
 
-        qc_data = pd.DataFrame(qc_data or [])
+        qc_data = pd.DataFrame(T.dashboard_rows(qc_data))
         if qc_data.empty:
             return {}, config, hidden_graph_style, default_empty_message, {"display": "flex"}
         if "RawFile" not in qc_data.columns:

@@ -2,13 +2,23 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.exceptions import PermissionDenied
 from django.test import SimpleTestCase, TestCase
 import pandas as pd
 
 from dashboards.dashboards.dashboard.anomaly import compute_flag_proposals
-from dashboards.dashboards.dashboard.index import _with_sample_labels
+from dashboards.dashboards.dashboard.index import (
+    _with_sample_labels,
+    refresh_qc_table,
+    update_kpis,
+)
 from dashboards.dashboards.dashboard.tools import (
     _normalize_max_features,
+    dashboard_result_data,
+    dashboard_rows,
+    dashboard_scope_error,
+    get_protein_groups,
+    get_qc_data,
     set_rawfile_action,
 )
 from maxquant.models import Pipeline, RawFile
@@ -17,6 +27,48 @@ from user.models import User
 
 
 class DashboardToolsTestCase(SimpleTestCase):
+    def test__dashboard_helpers_extract_rows_and_errors(self):
+        payload = {
+            "rows": [{"RawFile": "a.raw"}],
+            "error": {"kind": "parsing", "message": "Bad parquet"},
+        }
+
+        self.assertEqual(dashboard_rows(payload), [{"RawFile": "a.raw"}])
+        self.assertEqual(dashboard_scope_error(payload)["kind"], "parsing")
+        self.assertEqual(dashboard_result_data({"data": {"A": [1]}}, {}), {"A": [1]})
+
+    @patch("dashboards.dashboards.dashboard.tools.api_get_qc_data")
+    def test__get_qc_data_returns_structured_error_for_permission_failures(self, mock_get_qc):
+        mock_get_qc.side_effect = PermissionDenied("forbidden")
+
+        result = get_qc_data("proj", "pipe", columns=None, data_range=None, user=object())
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error"]["kind"], "auth")
+        self.assertIn("permission", result["error"]["message"].lower())
+
+    @patch("dashboards.dashboards.dashboard.tools.api_get_qc_data", return_value=pd.DataFrame())
+    def test__get_qc_data_preserves_true_no_data_state(self, _mock_get_qc):
+        result = get_qc_data("proj", "pipe", columns=None, data_range=None, user=object())
+
+        self.assertEqual(result["status"], "no_data")
+        self.assertIsNone(result["error"])
+
+    @patch("dashboards.dashboards.dashboard.tools.get_protein_quant_fn")
+    def test__get_protein_groups_returns_file_read_error(self, mock_get_fns):
+        mock_get_fns.side_effect = FileNotFoundError("missing parquet")
+
+        result = get_protein_groups(
+            "proj",
+            "pipe",
+            protein_names=["P1"],
+            columns=["Score"],
+            user=object(),
+        )
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error"]["kind"], "file_read")
+
     def test__normalize_max_features_caps_integer_values(self):
         assert _normalize_max_features(10, 4) == 4
         assert _normalize_max_features(0, 4) == 1
@@ -97,6 +149,26 @@ class DashboardToolsTestCase(SimpleTestCase):
         )
         self.assertEqual(qc_data["Flagged"].tolist(), [False, True])
 
+    def test__update_kpis_uses_structured_scope_rows(self):
+        result = update_kpis(
+            {
+                "rows": [
+                    {
+                        "RawFile": "a.raw",
+                        "N_protein_groups": 100,
+                        "N_peptides": 200,
+                        "MS/MS Identified [%]": 55.0,
+                    }
+                ],
+                "error": {"kind": "parsing", "message": "ignored by KPI summary"},
+            },
+            "proj",
+            "pipe",
+        )
+
+        self.assertEqual(result[0], "1")
+        self.assertEqual(result[1], "100.0")
+
 
 class DashboardRawFileActionTestCase(TestCase):
     def setUp(self):
@@ -156,3 +228,36 @@ class DashboardRawFileActionTestCase(TestCase):
         self.assertEqual(response["status"], "success")
         raw_file.refresh_from_db()
         self.assertTrue(raw_file.flagged)
+
+    @patch("dashboards.dashboards.dashboard.index.T.get_pipeline_uploaders")
+    @patch("dashboards.dashboards.dashboard.index.T.get_qc_data")
+    def test__refresh_qc_table_returns_visible_alert_for_backend_error(
+        self,
+        mock_get_qc_data,
+        mock_get_pipeline_uploaders,
+    ):
+        mock_get_qc_data.return_value = {
+            "status": "error",
+            "data": None,
+            "error": {
+                "kind": "parsing",
+                "message": "Dashboard data could not be parsed.",
+                "detail": "QC data request error: bad parquet",
+            },
+        }
+        mock_get_pipeline_uploaders.return_value = {"status": "no_data", "data": []}
+
+        _table, scope_data, _uploaders, _scope_style, _scope_options, alert = refresh_qc_table(
+            self.project.slug,
+            self.pipeline.slug,
+            "__all__",
+            None,
+            [],
+            True,
+            None,
+            user=self.user,
+        )
+
+        self.assertEqual(scope_data["status"], "error")
+        self.assertEqual(scope_data["error"]["kind"], "parsing")
+        self.assertIsNotNone(alert)

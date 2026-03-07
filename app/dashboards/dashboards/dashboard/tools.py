@@ -21,6 +21,7 @@ from matplotlib import pyplot as pl
 
 from pandas.api.types import is_numeric_dtype
 from django.db import models
+from django.core.exceptions import PermissionDenied
 
 from api.views import (
     _dataframe_json_payload,
@@ -50,6 +51,71 @@ from pycaret.anomaly import (
 URL = os.getenv("OMICS_URL", "http://localhost:8000")
 
 logging.info(f"Dashboard API URL:{URL}", file=sys.stderr)
+
+
+def dashboard_payload(status, data=None, error=None):
+    return {
+        "status": status,
+        "ok": status != "error",
+        "data": data,
+        "error": error,
+    }
+
+
+def dashboard_ok(data):
+    return dashboard_payload("ok", data=data, error=None)
+
+
+def dashboard_no_data(data=None):
+    return dashboard_payload("no_data", data=data, error=None)
+
+
+def dashboard_error(kind, message, detail=None):
+    return dashboard_payload(
+        "error",
+        data=None,
+        error={
+            "kind": kind,
+            "message": message,
+            "detail": detail,
+        },
+    )
+
+
+def dashboard_rows(payload):
+    if isinstance(payload, dict) and "rows" in payload:
+        return list(payload.get("rows") or [])
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+def dashboard_scope_error(payload):
+    if isinstance(payload, dict):
+        return payload.get("error")
+    return None
+
+
+def dashboard_result_data(result, default):
+    if not isinstance(result, dict):
+        return default
+    return result.get("data", default)
+
+
+def _classify_dashboard_exception(exc):
+    if isinstance(exc, PermissionDenied):
+        return "auth", "You do not have permission to access this dashboard data."
+    if isinstance(exc, (FileNotFoundError, OSError)):
+        return "file_read", "A required result file could not be read."
+    if isinstance(exc, (ValueError, pd.errors.ParserError, pd.errors.EmptyDataError)):
+        return "parsing", "Dashboard data could not be parsed."
+    return "integration", "Dashboard data request failed unexpectedly."
+
+
+def _dashboard_error_from_exception(exc, prefix):
+    kind, message = _classify_dashboard_exception(exc)
+    detail = f"{prefix}: {exc}"
+    return dashboard_error(kind, message, detail=detail)
 
 
 def list_to_dropdown_options(values):
@@ -89,42 +155,46 @@ def table_from_dataframe(
 
 def get_projects(user=None):
     if user is None:
-        return []
+        return dashboard_error("auth", "You must be signed in to load projects.")
     try:
         queryset = _projects_for_user(user)
         _json = ProjectsNamesSerializer(queryset, many=True).data
     except Exception as e:
         logging.error(f"Projects request error: {e}")
-        return []
+        return _dashboard_error_from_exception(e, "Projects request error")
     if not isinstance(_json, list):
-        return []
+        return dashboard_no_data([])
     output = [{"label": i["name"], "value": i["slug"]} for i in _json]
     output.sort(key=lambda o: o["label"].lower())
-    return output
+    if not output:
+        return dashboard_no_data([])
+    return dashboard_ok(output)
 
 
 def get_pipelines(project, user=None):
     if user is None:
-        return []
+        return dashboard_error("auth", "You must be signed in to load pipelines.")
     try:
         queryset = _pipelines_for_user(user).filter(project__slug=project)
         payload = PipelineSerializer(queryset, many=True).data
-        return payload if isinstance(payload, list) else []
     except Exception as e:
         logging.error(f"Pipelines request error: {e}")
-        return []
+        return _dashboard_error_from_exception(e, "Pipelines request error")
+    if not isinstance(payload, list) or not payload:
+        return dashboard_no_data([])
+    return dashboard_ok(payload)
 
 
 def get_pipeline_uploaders(project, pipeline, user=None):
     if user is None:
-        return []
+        return dashboard_error("auth", "You must be signed in to load uploader filters.")
     try:
         pipeline_obj = _pipelines_for_user(user).filter(
             project__slug=project,
             slug=pipeline,
         ).first()
         if pipeline_obj is None:
-            return []
+            return dashboard_no_data([])
         queryset = RawFileModel.objects.filter(pipeline=pipeline_obj).select_related("created_by")
         if not _is_admin(user):
             queryset = queryset.filter(created_by_id=user.id)
@@ -139,19 +209,21 @@ def get_pipeline_uploaders(project, pipeline, user=None):
             if not email:
                 continue
             output.append({"label": email, "value": email})
-        return output
     except Exception as e:
         logging.error(f"Pipeline uploaders request error: {e}")
-        return []
+        return _dashboard_error_from_exception(e, "Pipeline uploaders request error")
+    if not output:
+        return dashboard_no_data([])
+    return dashboard_ok(output)
 
 
 def get_protein_groups(
     project, pipeline, protein_names=None, columns=None, data_range=None, raw_files=None, user=None
 ):
     if user is None:
-        return {}
+        return dashboard_error("auth", "You must be signed in to load protein-group data.")
     if columns is None or protein_names is None:
-        return {}
+        return dashboard_no_data({})
     try:
         fns = get_protein_quant_fn(
             project,
@@ -161,7 +233,7 @@ def get_protein_groups(
             raw_files=raw_files,
         )
         if len(fns) == 0:
-            return {}
+            return dashboard_no_data({})
         columns = list(columns)
         if "Reporter intensity corrected" in columns:
             df = pd.read_parquet(fns[0])
@@ -169,10 +241,12 @@ def get_protein_groups(
             columns.remove("Reporter intensity corrected")
             columns = columns + intensity_columns
         df = get_protein_groups_data(fns, columns=columns, protein_names=protein_names)
-        return _dataframe_json_payload(df)
     except Exception as e:
         logging.error(f"Protein groups request error: {e}")
-        return {}
+        return _dashboard_error_from_exception(e, "Protein groups request error")
+    if df is None or df.empty:
+        return dashboard_no_data({})
+    return dashboard_ok(_dataframe_json_payload(df))
 
 
 def get_protein_names(
@@ -185,7 +259,7 @@ def get_protein_names(
     user=None,
 ):
     if user is None:
-        return {}
+        return dashboard_error("auth", "You must be signed in to load protein names.")
     try:
         fns = get_protein_quant_fn(
             project,
@@ -195,7 +269,7 @@ def get_protein_names(
             raw_files=raw_files,
         )
         if len(fns) == 0:
-            return {}
+            return dashboard_no_data({})
         cols = ["Majority protein IDs", "Fasta headers", "Score", "Intensity"]
         ddf = dd.read_parquet(fns, engine="pyarrow")[cols]
         if remove_contaminants:
@@ -213,19 +287,21 @@ def get_protein_names(
         response = {}
         for col in res.columns:
             response[col] = res[col].to_list()
-        return response
     except Exception as e:
         logging.error(f"Protein names request error: {e}")
-        return {}
+        return _dashboard_error_from_exception(e, "Protein names request error")
+    if res.empty:
+        return dashboard_no_data({})
+    return dashboard_ok(response)
 
 
 def get_qc_data(project, pipeline, columns, data_range=None, user=None):
     if user is None:
-        return {}
+        return dashboard_error("auth", "You must be signed in to load QC data.")
     try:
         df = api_get_qc_data(project, pipeline, data_range, user=user)
         if df is None:
-            df = pd.DataFrame()
+            return dashboard_no_data({})
         df = df.replace({np.nan: None})
         response = {}
         cols = df.columns if (not columns) else columns
@@ -235,10 +311,12 @@ def get_qc_data(project, pipeline, columns, data_range=None, user=None):
                 response[col] = df[col].tolist()
             else:
                 response[col] = [None] * n_rows
-        return response
     except Exception as e:
         logging.error(f"QC data request error: {e}")
-        return {}
+        return _dashboard_error_from_exception(e, "QC data request error")
+    if df.empty:
+        return dashboard_no_data({})
+    return dashboard_ok(response)
 
 
 def set_rawfile_action(project, pipeline, raw_files, action, user=None):
