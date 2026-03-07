@@ -325,8 +325,10 @@ class RawFileUploadAPI(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-
-        pipeline = get_pipeline(request)
+        try:
+            pipeline = get_pipeline(request)
+        except PermissionDenied:
+            return HttpResponseForbidden("Missing permissions for requested pipeline.")
         user = request.user
         orig_file = request.data["orig_file"]
 
@@ -346,8 +348,15 @@ class RawFileUploadAPI(APIView):
 
 
 def get_pipeline(request):
+    user = _get_request_user(request)
+    if user is None:
+        raise PermissionDenied("Missing user context.")
+
     uuid = request.data["pid"]
-    return get_instance_from_uuid(Pipeline, uuid)
+    pipeline = _pipelines_for_user(user).filter(uuid=uuid).first()
+    if pipeline is None:
+        raise PermissionDenied("Missing permissions for requested pipeline.")
+    return pipeline
 
 
 def get_instance_from_uuid(model, uuid):

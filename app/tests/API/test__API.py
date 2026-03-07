@@ -1,16 +1,19 @@
 from django.test import TestCase
 from datetime import date
 from unittest.mock import patch
+from types import SimpleNamespace
 from project.models import Project
 from maxquant.models import Pipeline
 
 from maxquant.models import RawFile
+from maxquant.models import Result
 
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 
 from django.test import Client
+from django.urls import reverse
 from user.models import User
 from api.views import get_protein_quant_fn
 
@@ -213,6 +216,86 @@ class ApiTestCase(TestCase):
         }, content_type="application/json")
 
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    @patch("maxquant.Result.rawtools_qc.delay", return_value=SimpleNamespace(id="qc-task"))
+    @patch(
+        "maxquant.Result.rawtools_metrics.delay",
+        return_value=SimpleNamespace(id="metrics-task"),
+    )
+    @patch("maxquant.Result.run_maxquant.delay", return_value=SimpleNamespace(id="mq-task"))
+    def test__upload_raw_rejects_pipeline_uuid_outside_users_projects(
+        self,
+        _mock_run_maxquant,
+        _mock_rawtools_metrics,
+        _mock_rawtools_qc,
+    ):
+        other_owner = User.objects.create_user(
+            email="api-other-owner@example.com",
+            password="testpass123",
+        )
+        other_project = Project.objects.create(
+            name="other project",
+            description="Another test project",
+            created_by=other_owner,
+        )
+        other_pipeline = Pipeline.objects.create(
+            name="other-pipe",
+            project=other_project,
+            created_by=other_owner,
+            fasta_file=SimpleUploadedFile("other_fasta.fasta", b">protein\nSEQUENCE"),
+            mqpar_file=SimpleUploadedFile("other_mqpar.xml", b"<mqpar></mqpar>"),
+            rawtools_args="-p -q -x -u -l -m -r TMT11 -chro 12TB",
+        )
+
+        c = Client()
+        c.force_login(self.user)
+        response = c.post(
+            reverse("api:upload-raw"),
+            data={
+                "pid": str(other_pipeline.uuid),
+                "orig_file": SimpleUploadedFile("foreign.raw", b"raw-bytes"),
+            },
+        )
+
+        assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+        assert not RawFile.objects.filter(
+            pipeline=other_pipeline,
+            orig_file="upload/foreign.raw",
+        ).exists()
+        assert not Result.objects.filter(raw_file__pipeline=other_pipeline).exists()
+
+    @patch("maxquant.Result.rawtools_qc.delay", return_value=SimpleNamespace(id="qc-task"))
+    @patch(
+        "maxquant.Result.rawtools_metrics.delay",
+        return_value=SimpleNamespace(id="metrics-task"),
+    )
+    @patch("maxquant.Result.run_maxquant.delay", return_value=SimpleNamespace(id="mq-task"))
+    def test__upload_raw_allows_project_member_and_auto_creates_result(
+        self,
+        _mock_run_maxquant,
+        _mock_rawtools_metrics,
+        _mock_rawtools_qc,
+    ):
+        c = Client()
+        c.force_login(self.member_user)
+        response = c.post(
+            reverse("api:upload-raw"),
+            data={
+                "pid": str(self.pipeline.uuid),
+                "orig_file": SimpleUploadedFile("member-upload.raw", b"raw-bytes"),
+            },
+        )
+
+        assert response.status_code == 201, f"Expected 201, got {response.status_code}"
+        raw_file = RawFile.objects.get(
+            pipeline=self.pipeline,
+            created_by=self.member_user,
+            orig_file="upload/member-upload.raw",
+        )
+        result = Result.objects.get(raw_file=raw_file)
+
+        assert result is not None
+        assert result.raw_file.pipeline == self.pipeline
 
     @patch("api.views.get_protein_quant_fn", return_value=[])
     def test__protein_groups_empty_result_returns_json_object(self, _mock_get_fns):
