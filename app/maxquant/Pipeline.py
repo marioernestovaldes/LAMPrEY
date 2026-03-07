@@ -22,6 +22,7 @@ from .defaults import ensure_default_mqpar_for_pipeline
 DATALAKE_ROOT = settings.DATALAKE_ROOT
 COMPUTE_ROOT = settings.COMPUTE_ROOT
 COMPUTE = settings.COMPUTE
+DEFAULT_MAXQUANT_VERSION = settings.DEFAULT_MAXQUANT_VERSION
 
 
 class Pipeline(MaxQuantParameter, FastaFile, RawToolsSetup):
@@ -50,7 +51,7 @@ class Pipeline(MaxQuantParameter, FastaFile, RawToolsSetup):
         null=True,
         blank=True,
         max_length=2000,
-        help_text="If this field is empty the default MaxQuant version (2.0.3.0) will be used. "
+        help_text=f"If this field is empty the default MaxQuant version ({DEFAULT_MAXQUANT_VERSION}) will be used. "
         "To try a different version go to MaxQuant Executables. If this is changed, "
         "all MaxQuant jobs in this pipeline should be rerun.",
     )

@@ -17,6 +17,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='pipeline',
             name='maxquant_executable',
-            field=models.FilePathField(blank=True, help_text='If this field is empty the default MaxQuant version (2.0.3.0) will be used. To try a different version go to MaxQuant Executables. If this is changed, all MaxQuant jobs in this pipeline should be rerun.', match='.*MaxQuantCmd\\.(exe|dll)', max_length=2000, null=True, path='/compute', recursive=True),
+            field=models.FilePathField(blank=True, help_text='If this field is empty the default MaxQuant version (2.4.12.0) will be used. To try a different version go to MaxQuant Executables. If this is changed, all MaxQuant jobs in this pipeline should be rerun.', match='.*MaxQuantCmd\\.(exe|dll)', max_length=2000, null=True, path='/compute', recursive=True),
         ),
     ]

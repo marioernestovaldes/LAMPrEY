@@ -205,14 +205,15 @@ CELERY_RESULT_BACKEND = "redis://redis:6379"
 
 
 AUTH_USER_MODEL = "user.User"
+DEFAULT_MAXQUANT_VERSION = os.getenv("DEFAULT_MAXQUANT_VERSION", "2.4.12.0")
 DEFAULT_MAXQUANT_EXECUTABLE = os.getenv("DEFAULT_MAXQUANT_EXECUTABLE")
 DEFAULT_MAXQUANT_LABEL = os.getenv(
     "DEFAULT_MAXQUANT_LABEL",
-    "Bundled MaxQuant 2.4.12.0 (recommended)",
+    f"Bundled MaxQuant {DEFAULT_MAXQUANT_VERSION} (recommended)",
 )
 DEFAULT_MQPAR_TEMPLATE = os.getenv(
     "DEFAULT_MQPAR_TEMPLATE",
-    str(BASE_DIR / "seed" / "defaults" / "config" / "mqpar_2.4.12.0.xml"),
+    str(BASE_DIR / "seed" / "defaults" / "config" / f"mqpar_{DEFAULT_MAXQUANT_VERSION}.xml"),
 )
 RAWTOOLS_COMMAND = os.getenv("RAWTOOLS_COMMAND", "/opt/conda/bin/rawtools.sh")
 
@@ -252,7 +253,12 @@ else:
 
 if DEFAULT_MAXQUANT_EXECUTABLE is None:
     DEFAULT_MAXQUANT_EXECUTABLE = str(
-        COMPUTE_ROOT / "software" / "MaxQuant" / "MaxQuant_v_2.4.12.0" / "bin" / "MaxQuantCmd.exe"
+        COMPUTE_ROOT
+        / "software"
+        / "MaxQuant"
+        / f"MaxQuant_v_{DEFAULT_MAXQUANT_VERSION}"
+        / "bin"
+        / "MaxQuantCmd.exe"
     )
 
 
