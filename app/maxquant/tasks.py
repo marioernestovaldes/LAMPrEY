@@ -3,6 +3,7 @@ import logging
 import signal
 import subprocess
 import time
+from contextlib import ExitStack
 from celery import shared_task
 from django.apps import apps
 
@@ -10,7 +11,9 @@ from omics.proteomics.maxquant import MaxquantRunner
 
 from omics.proteomics.rawtools.quality_control import (
     rawtools_metrics_cmd,
+    rawtools_metrics_spec,
     rawtools_qc_cmd,
+    rawtools_qc_spec,
 )
 
 PROCESS_TRACKING_FIELDS = {
@@ -196,58 +199,80 @@ def _reap_process(proc, timeout_seconds=2.0):
         return
 
 
-def _run_cancelable_shell_command(cmd, kind, result_id=None, tracking_key=None):
+def _run_cancelable_process(
+    cmd,
+    kind,
+    result_id=None,
+    tracking_key=None,
+    shell=False,
+    executable=None,
+    cwd=None,
+    stdout_path=None,
+    stderr_path=None,
+):
     poll_seconds = max(0.2, _safe_float("CANCEL_POLL_SECONDS", 2.0))
     kill_grace_seconds = _safe_int("CANCEL_KILL_GRACE_SECONDS", 5)
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            shell=True,
-            executable="/bin/bash",
-            preexec_fn=os.setsid,
+    with ExitStack() as stack:
+        stdout_handle = (
+            stack.enter_context(open(stdout_path, "w", encoding="utf-8"))
+            if stdout_path
+            else None
         )
-    except Exception as exc:
-        logging.exception("[%s] Failed to start command: %s", kind, exc)
-        return 1
-
-    pgid = None
-    try:
-        pgid = os.getpgid(proc.pid)
-    except ProcessLookupError:
-        pass
-    except OSError as exc:
-        logging.warning("[%s] Failed to read process group for pid=%s: %s", kind, proc.pid, exc)
-
-    _set_running_process(result_id, tracking_key, proc)
-    logging.info("[%s] started pid=%s pgid=%s", kind, proc.pid, pgid)
-    try:
-        while True:
-            rc = proc.poll()
-            if rc is not None:
-                logging.info("[%s] finished pid=%s rc=%s", kind, proc.pid, rc)
-                return rc
-
-            if _is_canceled_result(result_id):
-                logging.info(
-                    "[%s] cancel requested during execution; terminating pid=%s pgid=%s",
-                    kind,
-                    proc.pid,
-                    pgid,
-                )
-                _terminate_process_group(proc, grace_seconds=kill_grace_seconds)
-                # Ensure the direct child process is reaped so canceled runs do not
-                # leave zombie entries behind in long-lived celery workers.
-                _reap_process(proc)
-                return -1
-
-            time.sleep(poll_seconds)
-    finally:
-        _clear_running_process(
-            result_id=result_id,
-            tracking_key=tracking_key,
-            pid=proc.pid,
-            pgid=pgid,
+        stderr_handle = (
+            stack.enter_context(open(stderr_path, "w", encoding="utf-8"))
+            if stderr_path
+            else None
         )
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                shell=shell,
+                executable=executable,
+                cwd=cwd,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                preexec_fn=os.setsid,
+            )
+        except Exception as exc:
+            logging.exception("[%s] Failed to start command: %s", kind, exc)
+            return 1
+
+        pgid = None
+        try:
+            pgid = os.getpgid(proc.pid)
+        except ProcessLookupError:
+            pass
+        except OSError as exc:
+            logging.warning("[%s] Failed to read process group for pid=%s: %s", kind, proc.pid, exc)
+
+        _set_running_process(result_id, tracking_key, proc)
+        logging.info("[%s] started pid=%s pgid=%s", kind, proc.pid, pgid)
+        try:
+            while True:
+                rc = proc.poll()
+                if rc is not None:
+                    logging.info("[%s] finished pid=%s rc=%s", kind, proc.pid, rc)
+                    return rc
+
+                if _is_canceled_result(result_id):
+                    logging.info(
+                        "[%s] cancel requested during execution; terminating pid=%s pgid=%s",
+                        kind,
+                        proc.pid,
+                        pgid,
+                    )
+                    _terminate_process_group(proc, grace_seconds=kill_grace_seconds)
+                    _reap_process(proc)
+                    return -1
+
+                time.sleep(poll_seconds)
+        finally:
+            _clear_running_process(
+                result_id=result_id,
+                tracking_key=tracking_key,
+                pid=proc.pid,
+                pgid=pgid,
+            )
 
 
 @shared_task(bind=True, max_retries=None)
@@ -275,11 +300,19 @@ def rawtools_metrics(
             return
         logging.info(f"[rawtools_metrics] {cmd}")
         print(f"[rawtools_metrics] {cmd}")
-        _run_cancelable_shell_command(
-            cmd,
+        spec = rawtools_metrics_spec(
+            raw=raw,
+            output_dir=output_dir,
+            arguments=arguments,
+        )
+        _run_cancelable_process(
+            spec["args"],
             kind="rawtools_metrics",
             result_id=result_id,
             tracking_key="rawtools_metrics",
+            cwd=spec["cwd"],
+            stdout_path=spec["stdout"],
+            stderr_path=spec["stderr"],
         )
 
 
@@ -303,11 +336,15 @@ def rawtools_qc(self, input_dir, output_dir, rerun=False, result_id=None):
             return
         logging.info(f"[rawtools_qc] {cmd}")
         print(f"[rawtools_qc] {cmd}")
-        _run_cancelable_shell_command(
-            cmd,
+        spec = rawtools_qc_spec(input_dir=input_dir, output_dir=output_dir)
+        _run_cancelable_process(
+            spec["args"],
             kind="rawtools_qc",
             result_id=result_id,
             tracking_key="rawtools_qc",
+            cwd=spec["cwd"],
+            stdout_path=spec["stdout"],
+            stderr_path=spec["stderr"],
         )
 
 
@@ -335,9 +372,11 @@ def run_maxquant(self, raw_file, params, rerun=False, result_id=None):
     cmd = mq.run(raw_file, rerun=rerun, run=False)
     if cmd is None:
         return
-    _run_cancelable_shell_command(
+    _run_cancelable_process(
         cmd,
         kind="run_maxquant",
         result_id=result_id,
         tracking_key="maxquant",
+        shell=True,
+        executable="/bin/bash",
     )

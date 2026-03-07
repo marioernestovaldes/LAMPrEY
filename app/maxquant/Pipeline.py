@@ -13,6 +13,7 @@ from django.utils.translation import gettext_lazy as _
 from uuid import uuid4
 
 from .rawtools import RawToolsSetup
+from .rawtools import normalize_rawtools_args
 from .MaxQuantParameter import MaxQuantParameter
 from .FastaFile import FastaFile
 from .RawFile import RawFile
@@ -73,6 +74,7 @@ class Pipeline(MaxQuantParameter, FastaFile, RawToolsSetup):
 
     def save(self, *args, **kwargs):
         self.slug = slugify(self.name)
+        self.rawtools_args = normalize_rawtools_args(self.rawtools_args)
         return super().save(*args, **kwargs)
 
     def get_absolute_url(self):
