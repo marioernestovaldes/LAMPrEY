@@ -2,7 +2,9 @@
 
 LAMPrEY is a Docker-based quality control pipeline server for quantitative proteomics. It is designed for laboratories that want to organize proteomics pipelines, process RAW files automatically, and review QC results through a web interface.
 
-![](docs/img/ProteomicsQC1.png "LAMPrEY overview")
+The product name is `LAMPrEY`. The repository, package, and documentation URLs still use the historical `ProteomicsQC` project name.
+
+![](docs/img/ProteomicsQC1.png "LAMPrEY interface overview")
 
 Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io/ProteomicsQC/)
 

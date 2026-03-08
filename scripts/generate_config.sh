@@ -7,11 +7,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_ROOT/.env"
 DATA_DIR="$PROJECT_ROOT/data"
 
-echo '# OMICS PIPELINES CONFIG' > "$ENV_FILE"
+echo '# LAMPrEY CONFIG' > "$ENV_FILE"
 
 echo """
 ## HOMEPAGE SETTINGS
-HOME_TITLE='Proteomics Pipelines'
+HOME_TITLE='LAMPrEY'
 HOSTNAME=localhost
 ALLOWED_HOSTS=localhost
 CSRF_TRUSTED_ORIGINS=http://localhost

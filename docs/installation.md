@@ -67,6 +67,8 @@ For a normal local installation, you usually do not need to change anything yet.
 
 Only review `.env` now if you already know you need a different hostname, storage location, or email setup.
 
+`LAMPrEY` is the product name shown in the UI. Repository and container references may still use the historical `ProteomicsQC` name.
+
 ??? note "Default local configuration in `.env`"
 
     The generated file includes local-safe defaults such as:
