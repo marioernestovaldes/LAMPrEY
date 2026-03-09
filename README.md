@@ -4,7 +4,7 @@ LAMPrEY is a Docker-based quality control pipeline server for quantitative prote
 
 ![](docs/img/ProteomicsQC1.png "LAMPrEY interface overview")
 
-Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io/ProteomicsQC/)
+Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io/LAMPrEY/)
 
 ## What It Provides
 
@@ -25,7 +25,7 @@ Full documentation: [LAMPrEY documentation](https://LewisResearchGroup.github.io
 
 ```bash
 git lfs install
-git clone git@github.com:LewisResearchGroup/ProteomicsQC.git LAMPrEY
+git clone git@github.com:LewisResearchGroup/LAMPrEY.git LAMPrEY
 cd LAMPrEY
 git lfs pull
 ./scripts/generate_config.sh

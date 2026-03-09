@@ -37,7 +37,7 @@ This repository stores the bundled MaxQuant executable ZIP with Git LFS. If `git
 
 ```bash
 git lfs install
-git clone git@github.com:LewisResearchGroup/ProteomicsQC.git LAMPrEY
+git clone git@github.com:LewisResearchGroup/LAMPrEY.git LAMPrEY
 cd LAMPrEY
 git lfs pull
 ```
@@ -134,7 +134,7 @@ make init
 
 This is the command to use on a clean installation. `make init` performs the full first-run setup:
 
-- uses the published container [image](https://github.com/lewisresearchgroup/ProteomicsQC/pkgs/container/proteomicsqc)
+- pulls the published container image `ghcr.io/lewisresearchgroup/lamprey:${IMAGE_TAG:-latest}`
 - creates and applies Django migrations
 - prompts you to create a superuser
 - runs `collectstatic`

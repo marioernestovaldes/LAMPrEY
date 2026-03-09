@@ -5,7 +5,7 @@ services:
     restart: always
     user: ${UID}
     platform: linux/amd64
-    image: ghcr.io/lewisresearchgroup/proteomicsqc:${IMAGE_TAG:-latest}
+    image: ghcr.io/lewisresearchgroup/lamprey:${IMAGE_TAG:-latest}
     env_file:
       - ./.env
     command: bash /app/start-web.sh /opt/conda/bin/python server.py
@@ -48,7 +48,7 @@ services:
     restart: always
     user: ${UID}
     platform: linux/amd64
-    image: ghcr.io/lewisresearchgroup/proteomicsqc:${IMAGE_TAG:-latest}
+    image: ghcr.io/lewisresearchgroup/lamprey:${IMAGE_TAG:-latest}
     command: /opt/conda/bin/celery -A main worker -l info --concurrency ${CONCURRENCY}
     env_file:
       - ./.env
