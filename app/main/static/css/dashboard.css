@@ -1117,3 +1117,34 @@ body {
     padding: 4px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Loading Spinner – Brand Palette
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Semi-transparent overlay while loading */
+._dash-loading-callback {
+  background-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Circle spinner (type="circle") — small bouncing dots */
+.dash-sk-circle .dash-sk-child:before {
+  background-color: var(--color-mint-accent, #0f9d93) !important;
+}
+
+/* Default spinner (type="default") — bouncing rectangles */
+.dash-default-spinner .dash-default-spinner-rect1,
+.dash-default-spinner .dash-default-spinner-rect2,
+.dash-default-spinner .dash-default-spinner-rect3,
+.dash-default-spinner .dash-default-spinner-rect4,
+.dash-default-spinner .dash-default-spinner-rect5 {
+  background-color: var(--color-mint-accent, #0f9d93) !important;
+}
+
+/* Dot spinner (type="dot") — three bouncing dots */
+.dash-dot-spinner .dash-dot-spinner-bounce1,
+.dash-dot-spinner .dash-dot-spinner-bounce2,
+.dash-dot-spinner .dash-dot-spinner-bounce3 {
+  background-color: var(--color-mint-accent, #0f9d93) !important;
+}
+
