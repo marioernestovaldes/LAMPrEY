@@ -1016,6 +1016,25 @@ class Result(models.Model):
         )
 
     @cached_property
+    def has_active_dispatch(self):
+        if self.requeue_dispatch_active:
+            return True
+        for stage, status in self.stage_statuses.items():
+            if status not in {"queued", "running"}:
+                continue
+            task_id = getattr(self, f"{stage}_task_id", None)
+            submitted_at = getattr(self, f"{stage}_task_submitted_at", None)
+            pid_field, pgid_field = self.PROCESS_TRACKING_FIELDS[stage]
+            if (
+                task_id
+                or submitted_at is not None
+                or getattr(self, pid_field) is not None
+                or getattr(self, pgid_field) is not None
+            ):
+                return True
+        return False
+
+    @cached_property
     def processing_message(self):
         if any(
             (

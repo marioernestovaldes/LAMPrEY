@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -86,3 +86,32 @@ class QueueExistingRunTestCase(TestCase):
         self.assertEqual(self.result.rawtools_qc_status, "queued")
         self.assertEqual(self.result.overall_status, "queued")
         self.assertTrue(self.result.has_active_stage)
+
+    @patch.object(Result, "run_rawtools_qc")
+    @patch.object(Result, "run_rawtools_metrics")
+    @patch.object(Result, "run_maxquant")
+    def test_queue_existing_run_ignores_recent_output_activity_without_dispatch_markers(
+        self,
+        mock_run_maxquant,
+        mock_run_rawtools_metrics,
+        mock_run_rawtools_qc,
+    ):
+        self.result.refresh_from_db()
+
+        self.assertFalse(self.result.has_active_dispatch)
+
+        with patch.object(
+            Result,
+            "has_active_stage",
+            new_callable=PropertyMock,
+            return_value=True,
+        ):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    reverse("maxquant:queue_existing_run", kwargs={"pk": self.result.pk})
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mock_run_maxquant.call_count, 1)
+        self.assertEqual(mock_run_rawtools_metrics.call_count, 1)
+        self.assertEqual(mock_run_rawtools_qc.call_count, 1)

@@ -1275,7 +1275,7 @@ def queue_existing_run(request, pk):
             locked_queryset,
             pk=pk,
         )
-        if result.requeue_dispatch_active or result.has_active_stage:
+        if result.has_active_dispatch:
             return JsonResponse(
                 {
                     "is_valid": False,
