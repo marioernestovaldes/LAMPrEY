@@ -288,19 +288,28 @@ layout = html.Div(
                                         ),
                                     ],
                                 ),
-                                html.Div(
-                                    id="tabs-content",
-                                    className="pqc-canvas",
-                                    children=[],
-                                ),
                                 dcc.Loading(
+                                    id="pqc-workspace-loading",
                                     type="circle",
                                     children=html.Div(
-                                        id="qc-table-div",
-                                        className="pqc-table-wrap",
-                                        style={"display": "none"},
-                                        children=[dt.DataTable(id="qc-table")],
-                                    )
+                                        [
+                                            html.Div(
+                                                id="qc-loading-probe",
+                                                className="pqc-hidden-trigger",
+                                            ),
+                                            html.Div(
+                                                id="tabs-content",
+                                                className="pqc-canvas",
+                                                children=[],
+                                            ),
+                                        ]
+                                    ),
+                                ),
+                                html.Div(
+                                    id="qc-table-div",
+                                    className="pqc-table-wrap",
+                                    style={"display": "none"},
+                                    children=[dt.DataTable(id="qc-table")],
                                 ),
                             ],
                         )
@@ -429,9 +438,13 @@ def sync_scope_uploader_value(options, current_value):
         if isinstance(opt, dict) and opt.get("value") is not None
     }
     if current_value in values:
-        return current_value
+        raise PreventUpdate
     if "__all__" in values:
+        if current_value == "__all__":
+            raise PreventUpdate
         return "__all__"
+    if current_value is None:
+        raise PreventUpdate
     return None
 
 @app.callback(
@@ -440,6 +453,7 @@ def sync_scope_uploader_value(options, current_value):
     Output("qc-uploader-options", "data"),
     Output("pqc-scope-user-field", "style"),
     Output("scope-uploader", "options"),
+    Output("qc-loading-probe", "children"),
     Output("pqc-dashboard-alert", "children"),
     Input("project", "value"),
     Input("pipeline", "value"),
@@ -459,6 +473,7 @@ def refresh_qc_table(
     uid,
     **kwargs,
 ):
+    refresh_probe = str(pd.Timestamp.utcnow().value)
     user = kwargs.get("user")
     effective_uid = getattr(user, "uuid", None) or uid
     is_admin_session = bool(admin_data)
@@ -476,6 +491,7 @@ def refresh_qc_table(
             empty_options,
             scope_style,
             empty_options,
+            refresh_probe,
             None,
         )
     optional_columns = optional_columns or C.qc_columns_default
@@ -530,6 +546,7 @@ def refresh_qc_table(
             empty_options,
             scope_style,
             empty_options,
+            refresh_probe,
             alert,
         )
 
@@ -670,6 +687,7 @@ def refresh_qc_table(
         uploader_options,
         scope_style,
         uploader_options,
+        refresh_probe,
         alert,
     )
 
