@@ -11,8 +11,13 @@ import plotly.graph_objects as go
 from dashboards.dashboards.dashboard import config as C
 from dashboards.dashboards.dashboard import tools as T
 
-# Keep the graph responsive without forcing a tall container up front
-GRAPH_STYLE = {"maxWidth": "100%"}
+# Keep the graph responsive
+GRAPH_STYLE = {
+    "width": "100%",
+    "height": "100%",
+    "flex": "1 1 auto",
+    "minHeight": "0",
+}
 
 METRIC_LABELS = {
     "N_peptides": "Peptides Identified",
@@ -63,9 +68,11 @@ BUTTON_STYLE = {
 }
 
 layout = html.Div(
-    [
+    style={"display": "flex", "flexDirection": "column", "height": "100%", "minHeight": "400px"},
+    children=[
         html.Div(
             className="pqc-qc-plot-toolbar",
+            style={"flex": "0 0 auto"},
             children=[
                 html.Div(
                     className="pqc-qc-metric-wrap",
@@ -100,18 +107,22 @@ layout = html.Div(
             "No QC plot data available for this scope.",
             id="qc-empty-state",
             className="pqc-empty-state",
+            style={"flex": "1 1 auto"}
         ),
         dcc.Loading(
             type="circle",
+            parent_style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+            style={"display": "flex", "flexDirection": "column", "flex": "1 1 auto", "height": "100%"},
             children=[
                 html.Div(
                     [
                         dcc.Graph(
                             id="qc-figure",
+                            responsive=True,
                             style={**GRAPH_STYLE, "display": "none"},
                         ),
                     ],
-                    style={"textAlign": "center"},
+                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
                 )
             ]
         ),
@@ -153,7 +164,7 @@ def callbacks(app):
                 go.Figure(),
                 T.gen_figure_config(filename="QC-barplot", editable=False),
                 {**GRAPH_STYLE, "display": "none"},
-                {"display": "flex"},
+                {"display": "flex", "flex": "1 1 auto"},
             )
 
         assert pd.value_counts(df.columns).max() == 1, pd.value_counts(df.columns)
@@ -191,7 +202,7 @@ def callbacks(app):
                         go.Figure(),
                         T.gen_figure_config(filename="QC-trends", editable=False),
                         {**GRAPH_STYLE, "display": "none"},
-                        {"display": "flex"},
+                        {"display": "flex", "flex": "1 1 auto"},
                     )
 
                 if "Index" in df.columns:
@@ -240,7 +251,7 @@ def callbacks(app):
                         go.Figure(),
                         T.gen_figure_config(filename="QC-trends", editable=False),
                         {**GRAPH_STYLE, "display": "none"},
-                        {"display": "flex"},
+                        {"display": "flex", "flex": "1 1 auto"},
                     )
 
                 metric_label = METRIC_LABELS.get(selected_metric, selected_metric)
@@ -281,7 +292,6 @@ def callbacks(app):
                 fig.update_layout(
                     hovermode="closest",
                     hoverlabel_namelength=-1,
-                    height=495,
                     showlegend=False,
                     margin=dict(l=32, r=20, b=40, t=24, pad=0),
                     font=C.figure_font,
@@ -318,13 +328,13 @@ def callbacks(app):
                 )
                 config = T.gen_figure_config(filename="QC-trends", editable=False)
                 graph_style = {**GRAPH_STYLE, "display": "block"}
-                return fig, config, graph_style, {"display": "none"}
+                return fig, config, graph_style, {"display": "none", "flex": "1 1 auto"}
 
             return (
                 go.Figure(),
                 T.gen_figure_config(filename="QC-trends", editable=False),
                 {**GRAPH_STYLE, "display": "none"},
-                {"display": "flex"},
+                {"display": "flex", "flex": "1 1 auto"},
             )
         # Keep all samples visible by imputing missing points as zero.
         y_series = pd.to_numeric(df[selected_metric], errors="coerce").fillna(0)
@@ -365,7 +375,6 @@ def callbacks(app):
         fig.update_layout(
             hovermode="closest",
             hoverlabel_namelength=-1,
-            height=485,
             showlegend=False,
             margin=dict(l=32, r=20, b=60, t=24, pad=0),
             font=C.figure_font,
@@ -408,4 +417,4 @@ def callbacks(app):
 
         graph_style = {**GRAPH_STYLE, "display": "block"}
 
-        return fig, config, graph_style, {"display": "none"}
+        return fig, config, graph_style, {"display": "none", "flex": "1 1 auto"}

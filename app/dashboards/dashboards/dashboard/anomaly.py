@@ -15,9 +15,11 @@ from dashboards.dashboards.dashboard import tools as T
 
 
 layout = html.Div(
-    [
+    style={"display": "flex", "flexDirection": "column", "height": "100%", "minHeight": "400px"},
+    children=[
         html.Div(
             className="pqc-anomaly-controls",
+            style={"flex": "0 0 auto"},
             children=[
                 html.Div(
                     className="pqc-anomaly-controls-row",
@@ -141,6 +143,7 @@ layout = html.Div(
         ),
         html.Div(
             className="pqc-anomaly-plot-area",
+            style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
             children=[
                 html.Div(
                     "No anomaly plot data available for this scope.",
@@ -151,18 +154,23 @@ layout = html.Div(
                 dcc.Loading(
                     id="anomaly-loading",
                     type="circle",
-                    style={"height": "100%"},
+                    parent_style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0", "height": "100%"},
                     children=html.Div(
                         className="pqc-anomaly-loading-scope",
+                        style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
                         children=[
                             html.Div(id="anomaly-progress-probe", className="pqc-hidden-trigger"),
                             dcc.Graph(
                                 id="anomaly-figure",
                                 figure={},
+                                responsive=True,
                                 style={
                                     "display": "block",
                                     "width": "100%",
                                     "height": "100%",
+                                    "flex": "1 1 auto",
+                                    "minHeight": "0",
                                 },
                             ),
                         ],
@@ -480,15 +488,10 @@ def callbacks(app):
         df_plot.index = [_short_label_keep_ends(v, max_len=30, tail_len=8) for v in df_plot.index]
         df_plot.columns = [_short_label(_pretty_metric_name(c), max_len=30) for c in df_plot.columns]
 
-        # Keep a stable panel size across cohorts to avoid page-height jumps.
-        fixed_height = 460
-
         # Display metrics on y-axis and samples on x-axis.
         fig = T.px_heatmap(
             df_plot.T,
-            layout_kws=dict(
-                height=fixed_height,
-            ),
+            layout_kws=dict(),
         )
 
         # Clean axes

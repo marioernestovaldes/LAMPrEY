@@ -291,8 +291,11 @@ layout = html.Div(
                                 dcc.Loading(
                                     id="pqc-workspace-loading",
                                     type="circle",
+                                    parent_style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+                                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
                                     children=html.Div(
-                                        [
+                                        style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+                                        children=[
                                             html.Div(
                                                 id="qc-loading-probe",
                                                 className="pqc-hidden-trigger",
@@ -300,6 +303,7 @@ layout = html.Div(
                                             html.Div(
                                                 id="tabs-content",
                                                 className="pqc-canvas",
+                                                style={"display": "flex", "flexDirection": "column", "minHeight": "0"},
                                                 children=[],
                                             ),
                                         ]

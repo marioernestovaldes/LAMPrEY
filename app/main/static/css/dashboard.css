@@ -74,12 +74,19 @@ body {
   color: var(--g-900);
   font-size: 14px;
   line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 #react-entry-point,
 #_dash-app-content,
 #_dash-global-error-container {
   background: transparent;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 *, *::before, *::after {
@@ -92,7 +99,9 @@ body {
 .pqc-dashboard-root {
   width: 100%;
   max-width: 100%;
-  min-height: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   padding: 10px 28px 16px;
 }
 
@@ -104,9 +113,11 @@ body {
    Layout Grid
    ═══════════════════════════════════════════════════════════════════════════ */
 .pqc-layout {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   gap: 16px;
+  min-height: 0;
 }
 
 .pqc-main-grid {
@@ -114,6 +125,8 @@ body {
   grid-template-columns: 340px minmax(0, 1fr);
   gap: 20px;
   align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -492,6 +505,14 @@ body {
   background: #ffffff;
   padding: 12px;
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pqc-canvas > .dash-graph {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .pqc-empty-state {
@@ -949,8 +970,10 @@ body {
 
 /* Anomaly plot area */
 .pqc-anomaly-plot-area {
-  min-height: 420px;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--g-200);
   border-radius: var(--radius-lg);
   background: #ffffff;
@@ -958,12 +981,15 @@ body {
 }
 
 .pqc-anomaly-loading-scope {
-  min-height: 408px;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .pqc-anomaly-plot-area .dash-graph {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
