@@ -283,7 +283,7 @@ layout = html.Div(
                                         ),
                                         dcc.Tab(
                                             id="tab-protein-intensity",
-                                            label="Protein Intensities",
+                                            label="Protein Explorer",
                                             value="protein_intensity",
                                         ),
                                     ],

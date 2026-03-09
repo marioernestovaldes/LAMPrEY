@@ -20,6 +20,91 @@ X_AXIS_OPTIONS = [{"label": v, "value": k} for k, v in X_AXIS_LABELS.items()]
 
 GRAPH_STYLE = {"maxWidth": "100%"}
 
+PROTEIN_METRICS = {
+    "Reporter intensity corrected": {
+        "label": "Reporter intensity",
+        "y_title": "Log2Intensity",
+        "empty_message": "No reporter intensity columns are available for these proteins.",
+        "filename": "PQC-protein-explorer-intensity",
+    },
+    "Score": {
+        "label": "Andromeda score",
+        "y_title": "Andromeda Score",
+        "empty_message": "No Andromeda score values are available for these proteins.",
+        "filename": "PQC-protein-explorer-score",
+    },
+    "MS/MS count": {
+        "label": "MS/MS count",
+        "y_title": "MS/MS Count",
+        "empty_message": "No MS/MS count values are available for these proteins.",
+        "filename": "PQC-protein-explorer-msms-count",
+    },
+    "Peptides": {
+        "label": "Peptides",
+        "y_title": "Peptides",
+        "empty_message": "No peptide-count values are available for these proteins.",
+        "filename": "PQC-protein-explorer-peptides",
+    },
+    "Razor + unique peptides": {
+        "label": "Razor + unique peptides",
+        "y_title": "Razor + Unique Peptides",
+        "empty_message": "No razor+unique peptide values are available for these proteins.",
+        "filename": "PQC-protein-explorer-razor-unique-peptides",
+    },
+    "Unique peptides": {
+        "label": "Unique peptides",
+        "y_title": "Unique Peptides",
+        "empty_message": "No unique peptide values are available for these proteins.",
+        "filename": "PQC-protein-explorer-unique-peptides",
+    },
+    "Sequence coverage [%]": {
+        "label": "Sequence coverage (%)",
+        "y_title": "Sequence Coverage (%)",
+        "empty_message": "No sequence coverage values are available for these proteins.",
+        "filename": "PQC-protein-explorer-sequence-coverage",
+    },
+    "Unique + razor sequence coverage [%]": {
+        "label": "Unique + razor coverage (%)",
+        "y_title": "Unique + Razor Coverage (%)",
+        "empty_message": "No unique+razor sequence coverage values are available for these proteins.",
+        "filename": "PQC-protein-explorer-unique-razor-coverage",
+    },
+    "Unique sequence coverage [%]": {
+        "label": "Unique sequence coverage (%)",
+        "y_title": "Unique Sequence Coverage (%)",
+        "empty_message": "No unique sequence coverage values are available for these proteins.",
+        "filename": "PQC-protein-explorer-unique-coverage",
+    },
+    "Mol. weight [kDa]": {
+        "label": "Molecular weight (kDa)",
+        "y_title": "Molecular Weight (kDa)",
+        "empty_message": "No molecular-weight values are available for these proteins.",
+        "filename": "PQC-protein-explorer-mol-weight",
+    },
+    "Sequence length": {
+        "label": "Sequence length",
+        "y_title": "Sequence Length",
+        "empty_message": "No sequence-length values are available for these proteins.",
+        "filename": "PQC-protein-explorer-sequence-length",
+    },
+    "Number of proteins": {
+        "label": "Number of proteins",
+        "y_title": "Number of Proteins",
+        "empty_message": "No protein-count values are available for these proteins.",
+        "filename": "PQC-protein-explorer-num-proteins",
+    },
+    "Q-value": {
+        "label": "Q-value",
+        "y_title": "Q-value",
+        "empty_message": "No Q-value values are available for these proteins.",
+        "filename": "PQC-protein-explorer-q-value",
+    },
+}
+PROTEIN_METRIC_OPTIONS = [
+    {"label": spec["label"], "value": key}
+    for key, spec in PROTEIN_METRICS.items()
+]
+
 
 layout = html.Div(
     [
@@ -43,6 +128,19 @@ layout = html.Div(
                 html.Div(
                     className="pqc-qc-xaxis-wrap",
                     children=[
+                        html.Div("Metric", className="pqc-field-label"),
+                        dcc.Dropdown(
+                            id="protein-intensity-metric",
+                            options=PROTEIN_METRIC_OPTIONS,
+                            value="Reporter intensity corrected",
+                            clearable=False,
+                            className="pqc-scope-dropdown pqc-protein-intensity-dropdown",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    className="pqc-qc-xaxis-wrap",
+                    children=[
                         html.Div("Single-protein x-axis", className="pqc-field-label"),
                         dcc.Dropdown(
                             id="protein-intensity-x",
@@ -56,7 +154,7 @@ layout = html.Div(
             ],
         ),
         html.Div(
-            "Select proteins to visualize intensity distributions.",
+            "Select proteins and a metric to explore protein-level measurements.",
             id="protein-intensity-empty-state",
             className="pqc-empty-state",
         ),
@@ -144,6 +242,7 @@ def callbacks(app):
         Output("protein-intensity-alert", "children", allow_duplicate=True),
         Input("tabs", "value"),
         Input("protein-intensity-proteins", "value"),
+        Input("protein-intensity-metric", "value"),
         Input("protein-intensity-x", "value"),
         Input("project", "value"),
         Input("pipeline", "value"),
@@ -153,18 +252,25 @@ def callbacks(app):
     def plot_protein_intensity(
         tab,
         proteins,
+        selected_metric,
         x_axis,
         project,
         pipeline,
         scope_data,
         **kwargs,
     ):
-        config = T.gen_figure_config(filename="PQC-protein-intensity", editable=False)
+        metric_key = (
+            selected_metric
+            if selected_metric in PROTEIN_METRICS
+            else "Reporter intensity corrected"
+        )
+        metric_spec = PROTEIN_METRICS[metric_key]
+        config = T.gen_figure_config(filename=metric_spec["filename"], editable=False)
         hidden_style = {**GRAPH_STYLE, "display": "none"}
         shown_style = {**GRAPH_STYLE, "display": "block"}
 
         if tab != "protein_intensity":
-            return go.Figure(), config, hidden_style, "Select proteins to visualize intensity distributions.", {"display": "none"}, None
+            return go.Figure(), config, hidden_style, "Select proteins and a metric to explore protein-level measurements.", {"display": "none"}, None
         if not project or not pipeline:
             return go.Figure(), config, hidden_style, "Select a project and pipeline first.", {"display": "flex"}, None
 
@@ -205,11 +311,12 @@ def callbacks(app):
 
         raw_files = scope_df["RawFile"].tolist()
         user = kwargs.get("user")
+        requested_columns = [metric_key]
         payload_result = T.get_protein_groups(
             project=project,
             pipeline=pipeline,
             protein_names=proteins,
-            columns=["Reporter intensity corrected"],
+            columns=requested_columns,
             data_range=None,
             raw_files=raw_files,
             user=user,
@@ -219,16 +326,16 @@ def callbacks(app):
         data_df = pd.DataFrame(payload) if payload else pd.DataFrame()
         if data_df.empty:
             alert = None
-            message = "No protein intensity values found for the current selection."
+            message = f"No {metric_spec['label'].lower()} values were found for the current selection."
             if payload_error:
                 alert = dbc.Alert(
                     [
-                        html.Strong(payload_error.get("message", "Protein intensity load failed")),
+                        html.Strong(payload_error.get("message", "Protein explorer load failed")),
                         html.Div(payload_error.get("detail", "")),
                     ],
                     color="danger",
                 )
-                message = "Protein intensity data could not be loaded for the current selection."
+                message = "Protein explorer data could not be loaded for the current selection."
             return go.Figure(), config, hidden_style, message, {"display": "flex"}, alert
 
         protein_col = "Majority protein IDs"
@@ -237,60 +344,61 @@ def callbacks(app):
         if "RawFile" not in data_df.columns:
             return go.Figure(), config, hidden_style, "Sample names were not found in the intensity data.", {"display": "flex"}, None
 
-        intensity_cols = [
-            col
-            for col in data_df.columns
-            if isinstance(col, str) and col.startswith("Reporter intensity corrected ")
-        ]
-        if len(intensity_cols) == 0:
-            return go.Figure(), config, hidden_style, "No reporter intensity columns are available for these proteins.", {"display": "flex"}, None
-
-        long_df = data_df[["RawFile", protein_col] + intensity_cols].melt(
-            id_vars=["RawFile", protein_col],
-            value_vars=intensity_cols,
-            var_name="Channel",
-            value_name="Intensity",
-        )
-        long_df["RawFile"] = long_df["RawFile"].astype(str)
-        long_df["Intensity"] = pd.to_numeric(long_df["Intensity"], errors="coerce").fillna(0)
-        long_df["Log2Intensity"] = np.log2(long_df["Intensity"] + 1.0)
-        long_df["Channel"] = (
-            long_df["Channel"]
-            .astype(str)
-            .str.replace("Reporter intensity corrected ", "", regex=False)
-            .str.strip()
-        )
-        long_df["ChannelNo"] = pd.to_numeric(long_df["Channel"], errors="coerce")
-        long_df = long_df[long_df["RawFile"].isin(raw_files)]
-        if long_df.empty:
-            return go.Figure(), config, hidden_style, "No intensity records match the selected samples.", {"display": "flex"}, None
-
         axis_df = scope_df[["RawFile", "Index", "DateAcquired"]].copy()
         axis_df["RawFileLabel"] = axis_df["RawFile"]
-        long_df = long_df.merge(axis_df, on="RawFile", how="left")
         x_axis = x_axis if x_axis in X_AXIS_LABELS else "Index"
+        metric_is_intensity = metric_key == "Reporter intensity corrected"
+
+        if metric_is_intensity:
+            intensity_cols = [
+                col
+                for col in data_df.columns
+                if isinstance(col, str) and col.startswith("Reporter intensity corrected ")
+            ]
+            if len(intensity_cols) == 0:
+                return go.Figure(), config, hidden_style, metric_spec["empty_message"], {"display": "flex"}, None
+
+            long_df = data_df[["RawFile", protein_col] + intensity_cols].melt(
+                id_vars=["RawFile", protein_col],
+                value_vars=intensity_cols,
+                var_name="Channel",
+                value_name="Intensity",
+            )
+            long_df["RawFile"] = long_df["RawFile"].astype(str)
+            long_df["Intensity"] = pd.to_numeric(long_df["Intensity"], errors="coerce").fillna(0)
+            long_df["MetricValue"] = np.log2(long_df["Intensity"] + 1.0)
+            long_df["Channel"] = (
+                long_df["Channel"]
+                .astype(str)
+                .str.replace("Reporter intensity corrected ", "", regex=False)
+                .str.strip()
+            )
+            long_df["ChannelNo"] = pd.to_numeric(long_df["Channel"], errors="coerce")
+            long_df = long_df[long_df["RawFile"].isin(raw_files)]
+            if long_df.empty:
+                return go.Figure(), config, hidden_style, "No reporter intensity records match the selected samples.", {"display": "flex"}, None
+            long_df = long_df.merge(axis_df, on="RawFile", how="left")
+        else:
+            if metric_key not in data_df.columns:
+                return go.Figure(), config, hidden_style, metric_spec["empty_message"], {"display": "flex"}, None
+            long_df = data_df[["RawFile", protein_col, metric_key]].copy()
+            long_df["RawFile"] = long_df["RawFile"].astype(str)
+            long_df["MetricValue"] = pd.to_numeric(long_df[metric_key], errors="coerce")
+            long_df = long_df.dropna(subset=["MetricValue"])
+            long_df = long_df[long_df["RawFile"].isin(raw_files)]
+            if long_df.empty:
+                return go.Figure(), config, hidden_style, metric_spec["empty_message"], {"display": "flex"}, None
+            long_df = long_df.merge(axis_df, on="RawFile", how="left")
 
         if len(proteins) == 1:
             protein_name = proteins[0]
             single = long_df[long_df[protein_col] == protein_name].copy()
             if single.empty:
-                return go.Figure(), config, hidden_style, "The selected protein has no intensity values in this scope.", {"display": "flex"}, None
-
-            single = (
-                single.groupby(
-                    ["RawFile", "Channel", "ChannelNo", "Index", "DateAcquired", "RawFileLabel"],
-                    as_index=False,
-                )["Intensity"]
-                .median()
-            )
-            single["Log2Intensity"] = np.log2(single["Intensity"] + 1.0)
-            run_order = {raw: idx for idx, raw in enumerate(raw_files)}
-            single["run_idx"] = single["RawFile"].map(run_order)
-            single = single.sort_values(["run_idx", "ChannelNo"], na_position="last").reset_index(drop=True)
-            if single.empty:
-                return go.Figure(), config, hidden_style, "The selected protein has no intensity values in this scope.", {"display": "flex"}, None
+                return go.Figure(), config, hidden_style, f"The selected protein has no {metric_spec['label'].lower()} values in this scope.", {"display": "flex"}, None
 
             axis_mode = x_axis if x_axis in {"Index", "RawFile", "DateAcquired"} else "Index"
+            run_order = {raw: idx for idx, raw in enumerate(raw_files)}
+            single["run_idx"] = single["RawFile"].map(run_order)
 
             def _sample_axis_label(row):
                 if axis_mode == "RawFile":
@@ -301,24 +409,75 @@ def callbacks(app):
                         return dt.strftime("%Y-%m-%d")
                 return f"Sample {int(row.get('run_idx', 0)) + 1}"
 
-            single["sample_label"] = single.apply(_sample_axis_label, axis=1)
-            single["x_label"] = single.apply(
-                lambda row: f"{row['RawFile']} / TMT{int(row['ChannelNo'])}"
-                if pd.notna(row["ChannelNo"])
-                else f"{row['RawFile']} / {row['Channel']}",
-                axis=1,
-            )
-            single["x_pos"] = np.arange(1, len(single) + 1, dtype=int)
-            sample_tick_df = (
-                single.groupby(["run_idx", "sample_label"], as_index=False)["x_pos"]
-                .mean()
-                .sort_values("run_idx")
-            )
+            if metric_is_intensity:
+                single = (
+                    single.groupby(
+                        ["RawFile", "Channel", "ChannelNo", "Index", "DateAcquired", "RawFileLabel", "run_idx"],
+                        as_index=False,
+                    )[["Intensity", "MetricValue"]]
+                    .median()
+                )
+                single = single.sort_values(["run_idx", "ChannelNo"], na_position="last").reset_index(drop=True)
+                single["sample_label"] = single.apply(_sample_axis_label, axis=1)
+                single["x_label"] = single.apply(
+                    lambda row: f"{row['RawFile']} / TMT{int(row['ChannelNo'])}"
+                    if pd.notna(row["ChannelNo"])
+                    else f"{row['RawFile']} / {row['Channel']}",
+                    axis=1,
+                )
+                single["x_pos"] = np.arange(1, len(single) + 1, dtype=int)
+                sample_tick_df = (
+                    single.groupby(["run_idx", "sample_label"], as_index=False)["x_pos"]
+                    .mean()
+                    .sort_values("run_idx")
+                )
+                customdata = np.stack(
+                    [
+                        single["RawFile"].astype(str).values,
+                        single["Channel"].astype(str).values,
+                        single["Intensity"].astype(float).values,
+                    ],
+                    axis=1,
+                )
+                hovertemplate = (
+                    "<b>%{text}</b><br>"
+                    "log2(1+intensity): %{y:.2f}<br>"
+                    "Raw file: %{customdata[0]}<br>"
+                    "Channel: %{customdata[1]}<br>"
+                    "Intensity: %{customdata[2]:.2f}<extra></extra>"
+                )
+            else:
+                single = (
+                    single.groupby(
+                        ["RawFile", "Index", "DateAcquired", "RawFileLabel", "run_idx"],
+                        as_index=False,
+                    )["MetricValue"]
+                    .median()
+                )
+                single = single.sort_values("run_idx", na_position="last").reset_index(drop=True)
+                single["sample_label"] = single.apply(_sample_axis_label, axis=1)
+                single["x_label"] = single["RawFileLabel"].astype(str)
+                single["x_pos"] = np.arange(1, len(single) + 1, dtype=int)
+                sample_tick_df = single[["x_pos", "sample_label"]].copy()
+                customdata = np.stack(
+                    [
+                        single["RawFile"].astype(str).values,
+                        single["MetricValue"].astype(float).values,
+                    ],
+                    axis=1,
+                )
+                hovertemplate = (
+                    "<b>%{text}</b><br>"
+                    + f"{metric_spec['y_title']}: "
+                    + "%{y:.2f}<br>"
+                    "Raw file: %{customdata[0]}<extra></extra>"
+                )
+
             fig = go.Figure(
                 data=[
                     go.Scatter(
                         x=single["x_pos"],
-                        y=single["Log2Intensity"],
+                        y=single["MetricValue"],
                         mode="lines+markers",
                         showlegend=False,
                         marker=dict(
@@ -328,28 +487,15 @@ def callbacks(app):
                         ),
                         line=dict(width=2, color="rgba(6, 182, 212, 0.5)"),
                         text=single["x_label"],
-                        customdata=np.stack(
-                            [
-                                single["RawFile"].astype(str).values,
-                                single["Channel"].astype(str).values,
-                                single["Intensity"].astype(float).values,
-                            ],
-                            axis=1,
-                        ),
-                        hovertemplate=(
-                            "<b>%{text}</b><br>"
-                            "log2(1+intensity): %{y:.2f}<br>"
-                            "Raw file: %{customdata[0]}<br>"
-                            "Channel: %{customdata[1]}<br>"
-                            "Intensity: %{customdata[2]:.2f}<extra></extra>"
-                        ),
+                        customdata=customdata,
+                        hovertemplate=hovertemplate,
                     )
                 ]
             )
         else:
             multi = long_df[long_df[protein_col].isin(proteins)].copy()
             if multi.empty:
-                return go.Figure(), config, hidden_style, "No intensities were found for the selected proteins.", {"display": "flex"}, None
+                return go.Figure(), config, hidden_style, f"No {metric_spec['label'].lower()} values were found for the selected proteins.", {"display": "flex"}, None
 
             fig = go.Figure()
             palette = px.colors.qualitative.Pastel
@@ -357,17 +503,42 @@ def callbacks(app):
                 protein_df = multi[multi[protein_col] == protein_name]
                 if protein_df.empty:
                     continue
+                if metric_is_intensity:
+                    customdata = np.stack(
+                        [
+                            protein_df["RawFile"].astype(str).values,
+                            protein_df["Channel"].astype(str).values,
+                            protein_df["Intensity"].astype(float).values,
+                        ],
+                        axis=1,
+                    )
+                    hovertemplate = (
+                        "<b>%{x}</b><br>"
+                        "log2(1+intensity): %{y:.2f}<br>"
+                        "Raw file: %{customdata[0]}<br>"
+                        "Channel: %{customdata[1]}<br>"
+                        "Intensity: %{customdata[2]:.2f}<extra></extra>"
+                    )
+                else:
+                    customdata = np.stack(
+                        [
+                            protein_df["RawFile"].astype(str).values,
+                            protein_df["MetricValue"].astype(float).values,
+                        ],
+                        axis=1,
+                    )
+                    hovertemplate = (
+                        "<b>%{x}</b><br>"
+                        + f"{metric_spec['y_title']}: "
+                        + "%{y:.2f}<br>"
+                        "Raw file: %{customdata[0]}<extra></extra>"
+                    )
                 fig.add_trace(
                     go.Violin(
                         x=np.repeat(protein_name, len(protein_df)),
-                        y=protein_df["Log2Intensity"],
+                        y=protein_df["MetricValue"],
                         name=protein_name,
                         side="positive",
-                        spanmode="manual",
-                        span=[
-                            0.0,
-                            max(float(protein_df["Log2Intensity"].max()), 1e-6),
-                        ],
                         box_visible=False,
                         meanline_visible=False,
                         points="all",
@@ -381,21 +552,8 @@ def callbacks(app):
                         line=dict(width=0),
                         fillcolor=palette[idx % len(palette)],
                         opacity=1,
-                        customdata=np.stack(
-                            [
-                                protein_df["RawFile"].astype(str).values,
-                                protein_df["Channel"].astype(str).values,
-                                protein_df["Intensity"].astype(float).values,
-                            ],
-                            axis=1,
-                        ),
-                        hovertemplate=(
-                            "<b>%{x}</b><br>"
-                            "log2(1+intensity): %{y:.2f}<br>"
-                            "Raw file: %{customdata[0]}<br>"
-                            "Channel: %{customdata[1]}<br>"
-                            "Intensity: %{customdata[2]:.2f}<extra></extra>"
-                        ),
+                        customdata=customdata,
+                        hovertemplate=hovertemplate,
                     )
                 )
         chart_height = 475 if len(proteins) == 1 else 450
@@ -423,14 +581,14 @@ def callbacks(app):
                 tickvals=sample_tick_df["x_pos"].tolist(),
                 ticktext=sample_tick_df["sample_label"].tolist(),
                 tickangle=-90,
-                title_standoff=20,
-            )
+            title_standoff=20,
+        )
         else:
-            y_max = pd.to_numeric(multi["Log2Intensity"], errors="coerce").max()
+            y_max = pd.to_numeric(multi["MetricValue"], errors="coerce").max()
             y_max = 1.0 if pd.isna(y_max) else float(y_max)
             fig.update_yaxes(range=[-0.35, y_max + 0.8])
         fig.update_yaxes(
-            title_text="Log2Intensity",
+            title_text=metric_spec["y_title"],
             showgrid=True,
             gridcolor="#f1f5f7",
             zeroline=False,
