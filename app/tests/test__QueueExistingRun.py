@@ -64,6 +64,7 @@ class QueueExistingRunTestCase(TestCase):
         self.assertTrue(mock_run_maxquant.call_args.kwargs["rerun"])
         self.assertTrue(mock_run_rawtools_metrics.call_args.kwargs["rerun"])
         self.assertTrue(mock_run_rawtools_qc.call_args.kwargs["rerun"])
+        self.assertFalse(self.result.has_active_dispatch)
 
     def test_queue_existing_run_rejects_duplicate_submission_when_marker_exists(self):
         self.result.requeue_dispatch_started_at = timezone.now()
@@ -115,3 +116,61 @@ class QueueExistingRunTestCase(TestCase):
         self.assertEqual(mock_run_maxquant.call_count, 1)
         self.assertEqual(mock_run_rawtools_metrics.call_count, 1)
         self.assertEqual(mock_run_rawtools_qc.call_count, 1)
+
+
+class ResultAutoRunSignalTestCase(TestCase):
+    @patch.object(Result, "run")
+    def test_result_does_not_auto_run_when_pipeline_is_manual(self, mock_run):
+        user = User.objects.create_user(
+            email="manual-run@example.com", password="pass1234"
+        )
+        project = Project.objects.create(
+            name="Manual Queue Project",
+            description="Manual queue test project",
+            created_by=user,
+        )
+        pipeline = Pipeline.objects.create(
+            name="manual-queue-pipe",
+            project=project,
+            created_by=user,
+            run_automatically=False,
+            fasta_file=SimpleUploadedFile("manual.fasta", b">protein\nSEQUENCE"),
+            mqpar_file=SimpleUploadedFile("manual.xml", b"<mqpar></mqpar>"),
+            rawtools_args="-p -q -x",
+        )
+
+        RawFile.objects.create(
+            pipeline=pipeline,
+            orig_file=SimpleUploadedFile("manual.raw", b"..."),
+            created_by=user,
+        )
+
+        mock_run.assert_not_called()
+
+    @patch.object(Result, "run")
+    def test_result_auto_runs_when_pipeline_is_automatic(self, mock_run):
+        user = User.objects.create_user(
+            email="auto-run@example.com", password="pass1234"
+        )
+        project = Project.objects.create(
+            name="Auto Queue Project",
+            description="Auto queue test project",
+            created_by=user,
+        )
+        pipeline = Pipeline.objects.create(
+            name="auto-queue-pipe",
+            project=project,
+            created_by=user,
+            run_automatically=True,
+            fasta_file=SimpleUploadedFile("auto.fasta", b">protein\nSEQUENCE"),
+            mqpar_file=SimpleUploadedFile("auto.xml", b"<mqpar></mqpar>"),
+            rawtools_args="-p -q -x",
+        )
+
+        RawFile.objects.create(
+            pipeline=pipeline,
+            orig_file=SimpleUploadedFile("auto.raw", b"..."),
+            created_by=user,
+        )
+
+        mock_run.assert_called_once()
