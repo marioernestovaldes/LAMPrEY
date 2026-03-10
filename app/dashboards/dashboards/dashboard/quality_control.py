@@ -10,6 +10,10 @@ import plotly.graph_objects as go
 
 from dashboards.dashboards.dashboard import config as C
 from dashboards.dashboards.dashboard import tools as T
+from omics.proteomics.maxquant.quality_control import (
+    is_integer_metric_name,
+    metric_display_precision,
+)
 
 # Keep the graph responsive
 GRAPH_STYLE = {
@@ -25,6 +29,24 @@ METRIC_LABELS = {
     "MS/MS Identified [%]": "MS/MS Identified (%)",
     "Oxidations [%]": "Oxidations (%)",
     "N_missed_cleavages_eq_1 [%]": "Missed Cleavages Eq1 (%)",
+    "Protein_score_median": "Protein Score Median",
+    "Protein_score_mean": "Protein Score Mean",
+    "Protein_qvalue_median": "Protein Q-value Median",
+    "Protein_qvalue_lt_0_01 [%]": "Proteins Q-value < 0.01 (%)",
+    "Protein_peptides_median": "Protein Peptides Median",
+    "Protein_unique_peptides_median": "Protein Unique Peptides Median",
+    "Protein_razor_unique_peptides_median": "Protein Razor+Unique Peptides Median",
+    "Protein_unique_peptides_eq_1 [%]": "Proteins With 1 Unique Peptide (%)",
+    "Protein_msms_count_median": "Protein MS/MS Count Median",
+    "Protein_unique_seq_cov_median [%]": "Protein Unique Seq Coverage Median (%)",
+    "Peptide_score_median": "Peptide Score Median",
+    "Peptide_score_mean": "Peptide Score Mean",
+    "Peptide_PEP_median": "Peptide PEP Median",
+    "Peptide_PEP_lt_0_01 [%]": "Peptides PEP < 0.01 (%)",
+    "Peptide_length_median": "Peptide Length Median",
+    "Peptide_msms_count_median": "Peptide MS/MS Count Median",
+    "Peptide_unique_groups [%]": "Unique Peptides In Groups (%)",
+    "Peptide_unique_proteins [%]": "Unique Peptides In Proteins (%)",
     "Uncalibrated - Calibrated m/z [ppm] (ave)": "Delta m/z (ppm, avg)",
     # Group-specific QC1/QC2 metrics are temporarily disabled.
     # "calibrated_retention_time_qc1": "Calibrated RT QC1",
@@ -51,6 +73,24 @@ metric_options = [
         "MS/MS Identified [%]",
         "Oxidations [%]",
         "N_missed_cleavages_eq_1 [%]",
+        "Protein_score_median",
+        "Protein_score_mean",
+        "Protein_qvalue_median",
+        "Protein_qvalue_lt_0_01 [%]",
+        "Protein_peptides_median",
+        "Protein_unique_peptides_median",
+        "Protein_razor_unique_peptides_median",
+        "Protein_unique_peptides_eq_1 [%]",
+        "Protein_msms_count_median",
+        "Protein_unique_seq_cov_median [%]",
+        "Peptide_score_median",
+        "Peptide_score_mean",
+        "Peptide_PEP_median",
+        "Peptide_PEP_lt_0_01 [%]",
+        "Peptide_length_median",
+        "Peptide_msms_count_median",
+        "Peptide_unique_groups [%]",
+        "Peptide_unique_proteins [%]",
         "Uncalibrated - Calibrated m/z [ppm] (ave)",
         # Group-specific QC1/QC2 metrics are temporarily disabled.
         # "calibrated_retention_time_qc1",
@@ -344,6 +384,12 @@ def callbacks(app):
         y_upper = 1.0 if y_max <= 0 else y_max * 1.03
         metric_label = METRIC_LABELS.get(selected_metric, selected_metric)
         x_axis_label = X_AXIS_LABELS.get(x, x)
+        y_precision = (
+            0
+            if is_integer_metric_name(selected_metric)
+            else metric_display_precision(selected_metric)
+        )
+        y_hover_format = f".{y_precision}f"
 
         raw_labels = (
             df["RawFile"].astype(str)
@@ -368,7 +414,7 @@ def callbacks(app):
                     hovertemplate=(
                         "<b>%{hovertext}</b><br>"
                         + f"{metric_label}: "
-                        + "%{y:.2f}<extra></extra>"
+                        + f"%{{y:{y_hover_format}}}<extra></extra>"
                     ),
                 )
             ]
@@ -424,6 +470,7 @@ def callbacks(app):
             range=[0, y_upper],
             title_standoff=30,
             automargin=True,
+            tickformat=",d" if is_integer_metric_name(selected_metric) else None,
         )
 
         config = T.gen_figure_config(filename="QC-trends", editable=False)

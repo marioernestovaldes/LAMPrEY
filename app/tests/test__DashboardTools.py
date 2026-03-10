@@ -369,7 +369,9 @@ class DashboardToolsTestCase(SimpleTestCase):
         )
 
         self.assertEqual(result[0], "1")
-        self.assertEqual(result[1], "100.0")
+        self.assertEqual(result[1], "100")
+        self.assertEqual(result[2], "200")
+        self.assertEqual(result[3], "55.0%")
 
 
 class DashboardRawFileActionTestCase(TestCase):

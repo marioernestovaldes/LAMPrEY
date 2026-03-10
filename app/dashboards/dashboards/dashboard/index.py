@@ -20,6 +20,10 @@ from omics.plotly_tools import (
     set_template,
 )
 from omics.proteomics import ProteomicsQC
+from omics.proteomics.maxquant.quality_control import (
+    is_integer_metric_name,
+    metric_display_precision,
+)
 
 
 from dashboards.dashboards.dashboard.tools import list_to_dropdown_options
@@ -783,7 +787,8 @@ def update_kpis(data, project, pipeline):
         series = pd.to_numeric(df[column], errors="coerce")
         if series.notna().sum() == 0:
             return "--"
-        return f"{series.median():.1f}{suffix}"
+        precision = 0 if is_integer_metric_name(column) else metric_display_precision(column, default=1)
+        return f"{series.median():.{precision}f}{suffix}"
 
     return (
         str(len(df)),

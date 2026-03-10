@@ -4,6 +4,7 @@ import numpy as np
 import logging
 import re
 
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path as P
 from glob import glob
 from os.path import dirname, isdir, isfile, join, abspath
@@ -40,6 +41,16 @@ expected_columns_pre_tmt = [
     "N_protein_potential_contaminants",
     "N_protein_reverse_seq",
     "Protein_mean_seq_cov [%]",
+    "Protein_score_median",
+    "Protein_score_mean",
+    "Protein_qvalue_median",
+    "Protein_qvalue_lt_0_01 [%]",
+    "Protein_peptides_median",
+    "Protein_unique_peptides_median",
+    "Protein_razor_unique_peptides_median",
+    "Protein_unique_peptides_eq_1 [%]",
+    "Protein_msms_count_median",
+    "Protein_unique_seq_cov_median [%]",
 ]
 
 expected_columns_post_tmt = [
@@ -55,6 +66,14 @@ expected_columns_post_tmt = [
     "N_peptides_last_amino_acid_K [%]",
     "N_peptides_last_amino_acid_R [%]",
     "N_peptides_last_amino_acid_other [%]",
+    "Peptide_score_median",
+    "Peptide_score_mean",
+    "Peptide_PEP_median",
+    "Peptide_PEP_lt_0_01 [%]",
+    "Peptide_length_median",
+    "Peptide_msms_count_median",
+    "Peptide_unique_groups [%]",
+    "Peptide_unique_proteins [%]",
     "Mean_parent_int_frac",
     "Uncalibrated - Calibrated m/z [ppm] (ave)",
     "Uncalibrated - Calibrated m/z [ppm] (sd)",
@@ -85,6 +104,52 @@ expected_columns_post_tmt = [
     # "reporter_intensity_corrected_Protein_qc_sd",
     # "reporter_intensity_corrected_Protein_qc_cv",
 ]
+
+INTEGER_METRIC_NAMES = {
+    "MS",
+    "MS/MS",
+    "MS3",
+    "MS/MS Submitted",
+    "MS/MS submitted",
+    "MS/MS Identified",
+    "MS/MS identified",
+    "Peptide Sequences Identified",
+    "Peptide sequences identified",
+    "N_protein_groups",
+    "N_protein_true_hits",
+    "N_protein_potential_contaminants",
+    "N_protein_reverse_seq",
+    "Protein_peptides_median",
+    "Protein_unique_peptides_median",
+    "Protein_razor_unique_peptides_median",
+    "Protein_msms_count_median",
+    "N_peptides",
+    "N_peptides_potential_contaminants",
+    "N_peptides_reverse",
+    "N_missed_cleavages_total",
+    "Peptide_length_median",
+    "Peptide_msms_count_median",
+}
+
+INTEGER_METRIC_PATTERNS = (
+    re.compile(r"^TMT\d+_missing_values$"),
+)
+
+METRIC_PRECISION_OVERRIDES = {
+    "Protein_qvalue_median": 6,
+    "Peptide_PEP_median": 6,
+}
+
+
+def is_integer_metric_name(name):
+    name = str(name)
+    return name in INTEGER_METRIC_NAMES or any(
+        pattern.match(name) for pattern in INTEGER_METRIC_PATTERNS
+    )
+
+
+def metric_display_precision(name, default=2):
+    return METRIC_PRECISION_OVERRIDES.get(str(name), default)
 
 
 def _read_txt_table(path, filename, **kwargs):
@@ -128,6 +193,172 @@ def _safe_column_as_str(df, column, default="not detected"):
     if column not in df.columns:
         return default
     return ";".join([str(x) for x in df[column].to_list()])
+
+
+def _filtered_identifications(df, include_only_identified_by_site=False):
+    mask = (
+        _safe_filter_not_equal(df, "Potential contaminant", "+")
+        & _safe_filter_not_equal(df, "Reverse", "+")
+    )
+    if not include_only_identified_by_site:
+        mask &= _safe_filter_not_equal(df, "Only identified by site", "+")
+    return df[mask]
+
+
+def _safe_numeric_percentage(df, column, predicate):
+    if df.empty:
+        return 0.0
+    if column not in df.columns:
+        return np.nan
+    series = pd.to_numeric(df[column], errors="coerce")
+    valid = series.notna()
+    if valid.sum() == 0:
+        return np.nan
+    return predicate(series[valid]).mean() * 100
+
+
+def _safe_yes_percentage(df, column):
+    if df.empty:
+        return 0.0
+    if column not in df.columns:
+        return np.nan
+    series = df[column].astype(str).str.lower()
+    return series.eq("yes").mean() * 100
+
+
+def _round_half_up(value, precision=0):
+    quantizer = Decimal("1") if precision == 0 else Decimal(f"1e-{precision}")
+    return Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP)
+
+
+def _integer_median(series):
+    valid = series.dropna()
+    if valid.empty:
+        return np.nan
+    return int(_round_half_up(valid.median(skipna=True)))
+
+
+def _normalize_metric_value(key, value, precision_overrides=None, default_precision=2):
+    precision_overrides = precision_overrides or {}
+    if isinstance(value, (int, float, np.integer, np.floating)) and not pd.isna(value):
+        if is_integer_metric_name(key):
+            return int(_round_half_up(value))
+        precision = precision_overrides.get(key, default_precision)
+        return round(float(value), precision)
+    return value
+
+
+def _normalize_metric_dataframe(df, precision_overrides=None, default_precision=2):
+    precision_overrides = precision_overrides or {}
+    normalized = df.copy()
+    for column in normalized.columns:
+        normalized[column] = normalized[column].map(
+            lambda value: _normalize_metric_value(
+                column,
+                value,
+                precision_overrides=precision_overrides,
+                default_precision=default_precision,
+            )
+        )
+    return normalized
+
+
+def _protein_identification_metrics(df):
+    if df.empty:
+        return {
+            "Protein_score_median": 0.0,
+            "Protein_score_mean": 0.0,
+            "Protein_qvalue_median": 0.0,
+            "Protein_qvalue_lt_0_01 [%]": 0.0,
+            "Protein_peptides_median": 0,
+            "Protein_unique_peptides_median": 0,
+            "Protein_razor_unique_peptides_median": 0,
+            "Protein_unique_peptides_eq_1 [%]": 0.0,
+            "Protein_msms_count_median": 0,
+            "Protein_unique_seq_cov_median [%]": 0.0,
+        }
+    return {
+        "Protein_score_median": _safe_numeric_stat(
+            df, "Score", lambda s: s.median(skipna=True)
+        ),
+        "Protein_score_mean": _safe_numeric_stat(
+            df, "Score", lambda s: s.mean(skipna=True)
+        ),
+        "Protein_qvalue_median": _safe_numeric_stat(
+            df, "Q-value", lambda s: s.median(skipna=True)
+        ),
+        "Protein_qvalue_lt_0_01 [%]": _safe_numeric_percentage(
+            df, "Q-value", lambda s: s < 0.01
+        ),
+        "Protein_peptides_median": _safe_numeric_stat(
+            df, "Peptides", _integer_median
+        ),
+        "Protein_unique_peptides_median": _safe_numeric_stat(
+            df, "Unique peptides", _integer_median
+        ),
+        "Protein_razor_unique_peptides_median": _safe_numeric_stat(
+            df, "Razor + unique peptides", _integer_median
+        ),
+        "Protein_unique_peptides_eq_1 [%]": _safe_numeric_percentage(
+            df, "Unique peptides", lambda s: s == 1
+        ),
+        "Protein_msms_count_median": _safe_numeric_stat(
+            df, "MS/MS count", _integer_median
+        ),
+        "Protein_unique_seq_cov_median [%]": _safe_numeric_stat(
+            df, "Unique sequence coverage [%]", lambda s: s.median(skipna=True)
+        ),
+    }
+
+
+def _peptide_identification_metrics(df):
+    if df.empty:
+        return {
+            "Peptide_score_median": 0.0,
+            "Peptide_score_mean": 0.0,
+            "Peptide_PEP_median": 0.0,
+            "Peptide_PEP_lt_0_01 [%]": 0.0,
+            "Peptide_length_median": 0,
+            "Peptide_msms_count_median": 0,
+            "Peptide_unique_groups [%]": 0.0,
+            "Peptide_unique_proteins [%]": 0.0,
+        }
+    return {
+        "Peptide_score_median": _safe_numeric_stat(
+            df, "Score", lambda s: s.median(skipna=True)
+        ),
+        "Peptide_score_mean": _safe_numeric_stat(
+            df, "Score", lambda s: s.mean(skipna=True)
+        ),
+        "Peptide_PEP_median": _safe_numeric_stat(
+            df, "PEP", lambda s: s.median(skipna=True)
+        ),
+        "Peptide_PEP_lt_0_01 [%]": _safe_numeric_percentage(
+            df, "PEP", lambda s: s < 0.01
+        ),
+        "Peptide_length_median": _safe_numeric_stat(
+            df, "Length", _integer_median
+        ),
+        "Peptide_msms_count_median": _safe_numeric_stat(
+            df, "MS/MS Count", _integer_median
+        ),
+        "Peptide_unique_groups [%]": _safe_yes_percentage(df, "Unique (Groups)"),
+        "Peptide_unique_proteins [%]": _safe_yes_percentage(df, "Unique (Proteins)"),
+    }
+
+
+def _round_metric_series(result, precision_overrides=None, default_precision=2):
+    precision_overrides = precision_overrides or {}
+    normalized = {
+        key: _normalize_metric_value(
+            key,
+            value,
+            precision_overrides=precision_overrides,
+            default_precision=default_precision,
+        )
+        for key, value in result.items()
+    }
+    return pd.Series(normalized, dtype=object)
 
 
 def _missing_counts_by_channel(df, reporter_cols):
@@ -204,6 +435,11 @@ def _ordered_columns(df):
     return core_cols + extra_cols
 
 
+def _cached_qc_is_stale(df):
+    required_cols = set(expected_columns_pre_tmt + expected_columns_post_tmt)
+    return not required_cols.issubset(set(df.columns))
+
+
 def collect_maxquant_qc_data(root_path, force_update=False, from_csvs=True):
     """
     Generate MaxQuant quality control in all
@@ -229,12 +465,26 @@ def maxquant_qc_csv(
     abs_path = join(txt_path, out_fn)
     if isfile(abs_path) and not force_update:
         df = pd.read_csv(abs_path)
+        normalized_df = _normalize_metric_dataframe(
+            df,
+            precision_overrides=METRIC_PRECISION_OVERRIDES,
+        )
+        if not normalized_df.equals(df):
+            df = normalized_df
+            df.to_csv(abs_path, index=False)
+        if _cached_qc_is_stale(df):
+            logging.info("Regenerating stale MaxQuant QC cache: %s", abs_path)
+            df = maxquant_qc(txt_path)
     else:
         df = maxquant_qc(txt_path)
         if df is None:
             logging.warning(f"maxquant_qc_csv(): No data generated from {txt_path}")
             return None
         if out_fn is not None:
+            df = _normalize_metric_dataframe(
+                df,
+                precision_overrides=METRIC_PRECISION_OVERRIDES,
+            )
             df.to_csv(abs_path, index=False)
     df = df.rename(columns=summary_columns_v2_to_v1)
 
@@ -274,6 +524,10 @@ def maxquant_qc(txt_path, protein=None, pept_list=None):
     df = df.rename(columns=summary_columns_v2_to_v1)
     df["RUNDIR"] = str(txt_path)
 
+    df = _normalize_metric_dataframe(
+        df,
+        precision_overrides=METRIC_PRECISION_OVERRIDES,
+    )
     df = df.reindex(columns=_ordered_columns(df))
     return df.infer_objects()
 
@@ -308,11 +562,7 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
     else:
         mean_sequence_coverage = np.nan
 
-    df1 = df[
-        _safe_filter_not_equal(df, "Potential contaminant", "+")
-        & _safe_filter_not_equal(df, "Reverse", "+")
-        & _safe_filter_not_equal(df, "Only identified by site", "+")
-    ]
+    df1 = _filtered_identifications(df, include_only_identified_by_site=False)
     # Group-specific QC1/QC2 exclusions are temporarily disabled.
     # df1 = df[
     #     _safe_filter_not_equal(df, "Potential contaminant", "+")
@@ -332,6 +582,7 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
         "N_protein_reverse_seq": n_reverse,
         "Protein_mean_seq_cov [%]": mean_sequence_coverage,
     }
+    result.update(_protein_identification_metrics(df1))
 
     if len(m_v) != 0:
         dic_m_v = {f"TMT{i + 1}_missing_values": v for i, v in enumerate(m_v)}
@@ -376,12 +627,16 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
     #     }
     #     result.update(dict_info_qc3)
 
-    return pd.Series(result)
+    return _round_metric_series(
+        result,
+        precision_overrides=METRIC_PRECISION_OVERRIDES,
+    )
 
 
 def maxquant_qc_peptides(txt_path):
     filename = "peptides.txt"
     df = _read_txt_table(txt_path, filename)
+    df_identified = _filtered_identifications(df, include_only_identified_by_site=True)
     max_missed_cleavages = 3
     last_amino_acids = ["K", "R"]
     n_peptides = len(df)
@@ -400,6 +655,14 @@ def maxquant_qc_peptides(txt_path):
                 "N_peptides_last_amino_acid_K [%]": 0.0,
                 "N_peptides_last_amino_acid_R [%]": 0.0,
                 "N_peptides_last_amino_acid_other [%]": 0.0,
+                "Peptide_score_median": 0.0,
+                "Peptide_score_mean": 0.0,
+                "Peptide_PEP_median": 0.0,
+                "Peptide_PEP_lt_0_01 [%]": 0.0,
+                "Peptide_length_median": 0,
+                "Peptide_msms_count_median": 0,
+                "Peptide_unique_groups [%]": 0.0,
+                "Peptide_unique_proteins [%]": 0.0,
             }
         )
     n_contaminants = _safe_eq_plus_count(df, "Potential contaminant")
@@ -440,7 +703,11 @@ def maxquant_qc_peptides(txt_path):
     result["N_peptides_last_amino_acid_other [%]"] = (
         (~last_aa.isin(last_amino_acids)).sum() / n_peptides * 100
     )
-    return pd.Series(result).round(2)
+    result.update(_peptide_identification_metrics(df_identified))
+    return _round_metric_series(
+        result,
+        precision_overrides=METRIC_PRECISION_OVERRIDES,
+    )
 
 
 def maxquant_qc_msmScans(txt_path, t0=None, tf=None):

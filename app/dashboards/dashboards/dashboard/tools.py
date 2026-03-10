@@ -13,7 +13,7 @@ import numpy as np
 import dask.dataframe as dd
 
 from dash import dash_table as dt
-from dash.dash_table.Format import Format
+from dash.dash_table.Format import Format, Scheme
 
 import plotly.graph_objects as go
 import plotly.figure_factory as ff
@@ -41,6 +41,10 @@ from api.views import (
 from maxquant.models import RawFile as RawFileModel
 from maxquant.serializers import PipelineSerializer
 from project.serializers import ProjectsNamesSerializer
+from omics.proteomics.maxquant.quality_control import (
+    is_integer_metric_name,
+    metric_display_precision,
+)
 
 
 from pycaret.anomaly import (
@@ -131,10 +135,31 @@ def table_from_dataframe(
     row_selectable="multi",
     hidden_columns=None,
 ):
+    def _column_format(column_name):
+        series = df[column_name]
+        numeric = pd.to_numeric(series.dropna(), errors="coerce")
+        if numeric.empty or not numeric.notna().all():
+            return None
+        if is_integer_metric_name(column_name):
+            return Format(precision=0, scheme=Scheme.fixed)
+        precision = metric_display_precision(column_name)
+        if precision == 2 and np.allclose(numeric, np.round(numeric)):
+            return Format(precision=0, scheme=Scheme.fixed)
+        return Format(precision=precision, scheme=Scheme.fixed)
+
     return dt.DataTable(
         id=id,
         columns=[
-            {"name": i, "id": i, "format": Format(precision=2)} for i in df.columns
+            {
+                key: value
+                for key, value in {
+                    "name": column,
+                    "id": column,
+                    "format": _column_format(column),
+                }.items()
+                if value is not None
+            }
+            for column in df.columns
         ],
         data=df.iloc[::-1].to_dict("records"),
         sort_action="native",
