@@ -70,27 +70,28 @@ expected_columns = [
     "Uncalibrated - Calibrated m/z [Da] (sd)",
     "Peak Width(ave)",
     "Peak Width (std)",
-    "qc1_peptide_charges",
-    "N_qc1_missing_values",
-    "reporter_intensity_corrected_qc1_ave",
-    "reporter_intensity_corrected_qc1_sd",
-    "reporter_intensity_corrected_qc1_cv",
-    "calibrated_retention_time_qc1",
-    "retention_length_qc1",
-    "N_of_scans_qc1",
-    "qc2_peptide_charges",
-    "N_qc2_missing_values",
-    "reporter_intensity_corrected_qc2_ave",
-    "reporter_intensity_corrected_qc2_sd",
-    "reporter_intensity_corrected_qc2_cv",
-    "calibrated_retention_time_qc2",
-    "retention_length_qc2",
-    "N_of_scans_qc2",
-    "N_of_Protein_qc_pepts",
-    "N_Protein_qc_missing_values",
-    "reporter_intensity_corrected_Protein_qc_ave",
-    "reporter_intensity_corrected_Protein_qc_sd",
-    "reporter_intensity_corrected_Protein_qc_cv",
+    # Group-specific QC1/QC2/QC3 metrics are temporarily disabled.
+    # "qc1_peptide_charges",
+    # "N_qc1_missing_values",
+    # "reporter_intensity_corrected_qc1_ave",
+    # "reporter_intensity_corrected_qc1_sd",
+    # "reporter_intensity_corrected_qc1_cv",
+    # "calibrated_retention_time_qc1",
+    # "retention_length_qc1",
+    # "N_of_scans_qc1",
+    # "qc2_peptide_charges",
+    # "N_qc2_missing_values",
+    # "reporter_intensity_corrected_qc2_ave",
+    # "reporter_intensity_corrected_qc2_sd",
+    # "reporter_intensity_corrected_qc2_cv",
+    # "calibrated_retention_time_qc2",
+    # "retention_length_qc2",
+    # "N_of_scans_qc2",
+    # "N_of_Protein_qc_pepts",
+    # "N_Protein_qc_missing_values",
+    # "reporter_intensity_corrected_Protein_qc_ave",
+    # "reporter_intensity_corrected_Protein_qc_sd",
+    # "reporter_intensity_corrected_Protein_qc_cv",
 ]
 
 
@@ -303,10 +304,16 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
     df1 = df[
         _safe_filter_not_equal(df, "Potential contaminant", "+")
         & _safe_filter_not_equal(df, "Reverse", "+")
-        & _safe_filter_not_equal(df, "Majority protein IDs", "QC1|Peptide1")
-        & _safe_filter_not_equal(df, "Majority protein IDs", "QC2|Peptide2")
         & _safe_filter_not_equal(df, "Only identified by site", "+")
     ]
+    # Group-specific QC1/QC2 exclusions are temporarily disabled.
+    # df1 = df[
+    #     _safe_filter_not_equal(df, "Potential contaminant", "+")
+    #     & _safe_filter_not_equal(df, "Reverse", "+")
+    #     & _safe_filter_not_equal(df, "Majority protein IDs", "QC1|Peptide1")
+    #     & _safe_filter_not_equal(df, "Majority protein IDs", "QC2|Peptide2")
+    #     & _safe_filter_not_equal(df, "Only identified by site", "+")
+    # ]
 
     reporter_cols = _reporter_intensity_columns(df1)
     m_v = _missing_counts_by_channel(df1, reporter_cols)
@@ -337,43 +344,44 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
         dic_m_v = dict(zip(l_1, l_2))
         result.update(dic_m_v)
 
-    if protein is None:
-        protein = [
-            "QC3_BSA"
-        ]  # name must be unique, otherwise generates a df with more than one row and ends up in error
-
-    df_qc3 = df[_safe_string_contains(df, "Protein IDs", protein[0])]
-    df_qc3 = _select_max_intensity_row(df_qc3)
-
-    if not df_qc3.empty:
-        reporter_cols_qc3 = _reporter_intensity_columns(df_qc3)
-        ave, std, cv = _row_reporter_stats(
-            df_qc3, reporter_cols_qc3, cv_when_mean_zero=None
-        )
-
-        dict_info_qc3 = {
-            "Protein_qc": protein[0],
-            "N_of_Protein_qc_pepts": _safe_column_as_str(df_qc3, "Peptide counts (all)"),
-            "N_Protein_qc_missing_values": _missing_counts_as_str(
-                df_qc3, reporter_cols_qc3
-            ),
-            "reporter_intensity_corrected_Protein_qc_ave": ave,
-            "reporter_intensity_corrected_Protein_qc_sd": std,
-            "reporter_intensity_corrected_Protein_qc_cv": cv,
-        }
-
-        result.update(dict_info_qc3)
-
-    else:
-        dict_info_qc3 = {
-            "Protein_qc": "not detected",
-            "N_of_Protein_qc_pepts": "not detected",
-            "N_Protein_qc_missing_values": "not detected",
-            "reporter_intensity_corrected_Protein_qc_ave": "not detected",
-            "reporter_intensity_corrected_Protein_qc_sd": "not detected",
-            "reporter_intensity_corrected_Protein_qc_cv": "not detected",
-        }
-        result.update(dict_info_qc3)
+    # Group-specific QC3_BSA metrics are temporarily disabled.
+    # if protein is None:
+    #     protein = [
+    #         "QC3_BSA"
+    #     ]  # name must be unique, otherwise generates a df with more than one row and ends up in error
+    #
+    # df_qc3 = df[_safe_string_contains(df, "Protein IDs", protein[0])]
+    # df_qc3 = _select_max_intensity_row(df_qc3)
+    #
+    # if not df_qc3.empty:
+    #     reporter_cols_qc3 = _reporter_intensity_columns(df_qc3)
+    #     ave, std, cv = _row_reporter_stats(
+    #         df_qc3, reporter_cols_qc3, cv_when_mean_zero=None
+    #     )
+    #
+    #     dict_info_qc3 = {
+    #         "Protein_qc": protein[0],
+    #         "N_of_Protein_qc_pepts": _safe_column_as_str(df_qc3, "Peptide counts (all)"),
+    #         "N_Protein_qc_missing_values": _missing_counts_as_str(
+    #             df_qc3, reporter_cols_qc3
+    #         ),
+    #         "reporter_intensity_corrected_Protein_qc_ave": ave,
+    #         "reporter_intensity_corrected_Protein_qc_sd": std,
+    #         "reporter_intensity_corrected_Protein_qc_cv": cv,
+    #     }
+    #
+    #     result.update(dict_info_qc3)
+    #
+    # else:
+    #     dict_info_qc3 = {
+    #         "Protein_qc": "not detected",
+    #         "N_of_Protein_qc_pepts": "not detected",
+    #         "N_Protein_qc_missing_values": "not detected",
+    #         "reporter_intensity_corrected_Protein_qc_ave": "not detected",
+    #         "reporter_intensity_corrected_Protein_qc_sd": "not detected",
+    #         "reporter_intensity_corrected_Protein_qc_cv": "not detected",
+    #     }
+    #     result.update(dict_info_qc3)
 
     return pd.Series(result)
 
@@ -485,79 +493,80 @@ def maxquant_qc_evidence(txt_path, pept_list=None):
         ),
     }
 
-    if pept_list is None:
-        pept_list = [
-            "HVLTSIGEK",
-            "LTILEELR",
-            "ATEEQLK",
-            "AEFVEVTK",
-            "QTALVELLK",
-            "TVMENFVAFVDK",
-        ]
-    elif len(pept_list) < 6:
-        pept_list = pept_list + (6 - len(pept_list)) * ["dummy_peptide"]
-    elif len(pept_list) > 6:
-        pept_list = pept_list[:6]
-
-    for idx, peptide in enumerate(pept_list, start=1):
-        if "Sequence" in df.columns:
-            df_pept = df[df["Sequence"] == peptide]
-        else:
-            df_pept = pd.DataFrame()
-        if not df_pept.empty:
-            charges = _safe_column_as_str(df_pept, "Charge")
-            df_pept = _select_max_intensity_row(df_pept)
-            if df_pept.empty:
-                dict_info_qc = {
-                    f"qc{idx}_peptide_charges": "not detected",
-                    f"N_qc{idx}_missing_values": "not detected",
-                    f"reporter_intensity_corrected_qc{idx}_ave": "not detected",
-                    f"reporter_intensity_corrected_qc{idx}_sd": "not detected",
-                    f"reporter_intensity_corrected_qc{idx}_cv": "not detected",
-                    f"calibrated_retention_time_qc{idx}": "not detected",
-                    f"retention_length_qc{idx}": "not detected",
-                    f"N_of_scans_qc{idx}": "not detected",
-                }
-                result.update(dict_info_qc)
-                continue
-
-            reporter_cols = _reporter_intensity_columns(df_pept)
-            ave, std, cv = _row_reporter_stats(
-                df_pept, reporter_cols, cv_when_mean_zero="not calculated"
-            )
-
-            dict_info_qc = {
-                f"qc{idx}_peptide": peptide,
-                f"qc{idx}_peptide_charges": charges,
-                f"N_qc{idx}_missing_values": _missing_counts_as_str(
-                    df_pept, reporter_cols
-                ),
-                f"reporter_intensity_corrected_qc{idx}_ave": ave,
-                f"reporter_intensity_corrected_qc{idx}_sd": std,
-                f"reporter_intensity_corrected_qc{idx}_cv": cv,
-                f"calibrated_retention_time_qc{idx}": _safe_numeric_stat(
-                    df_pept, "Calibrated retention time", lambda s: float(s.iloc[0])
-                ),
-                f"retention_length_qc{idx}": _safe_numeric_stat(
-                    df_pept, "Retention length", lambda s: float(s.iloc[0])
-                ),
-                f"N_of_scans_qc{idx}": _safe_numeric_stat(
-                    df_pept, "Number of scans", lambda s: float(s.iloc[0])
-                ),
-            }
-
-            result.update(dict_info_qc)
-        else:
-            dict_info_qc = {
-                f"qc{idx}_peptide_charges": "not detected",
-                f"N_qc{idx}_missing_values": "not detected",
-                f"reporter_intensity_corrected_qc{idx}_ave": "not detected",
-                f"reporter_intensity_corrected_qc{idx}_sd": "not detected",
-                f"reporter_intensity_corrected_qc{idx}_cv": "not detected",
-                f"calibrated_retention_time_qc{idx}": "not detected",
-                f"retention_length_qc{idx}": "not detected",
-                f"N_of_scans_qc{idx}": "not detected",
-            }
-            result.update(dict_info_qc)
+    # Group-specific QC1/QC2/QC3 peptide metrics are temporarily disabled.
+    # if pept_list is None:
+    #     pept_list = [
+    #         "HVLTSIGEK",
+    #         "LTILEELR",
+    #         "ATEEQLK",
+    #         "AEFVEVTK",
+    #         "QTALVELLK",
+    #         "TVMENFVAFVDK",
+    #     ]
+    # elif len(pept_list) < 6:
+    #     pept_list = pept_list + (6 - len(pept_list)) * ["dummy_peptide"]
+    # elif len(pept_list) > 6:
+    #     pept_list = pept_list[:6]
+    #
+    # for idx, peptide in enumerate(pept_list, start=1):
+    #     if "Sequence" in df.columns:
+    #         df_pept = df[df["Sequence"] == peptide]
+    #     else:
+    #         df_pept = pd.DataFrame()
+    #     if not df_pept.empty:
+    #         charges = _safe_column_as_str(df_pept, "Charge")
+    #         df_pept = _select_max_intensity_row(df_pept)
+    #         if df_pept.empty:
+    #             dict_info_qc = {
+    #                 f"qc{idx}_peptide_charges": "not detected",
+    #                 f"N_qc{idx}_missing_values": "not detected",
+    #                 f"reporter_intensity_corrected_qc{idx}_ave": "not detected",
+    #                 f"reporter_intensity_corrected_qc{idx}_sd": "not detected",
+    #                 f"reporter_intensity_corrected_qc{idx}_cv": "not detected",
+    #                 f"calibrated_retention_time_qc{idx}": "not detected",
+    #                 f"retention_length_qc{idx}": "not detected",
+    #                 f"N_of_scans_qc{idx}": "not detected",
+    #             }
+    #             result.update(dict_info_qc)
+    #             continue
+    #
+    #         reporter_cols = _reporter_intensity_columns(df_pept)
+    #         ave, std, cv = _row_reporter_stats(
+    #             df_pept, reporter_cols, cv_when_mean_zero="not calculated"
+    #         )
+    #
+    #         dict_info_qc = {
+    #             f"qc{idx}_peptide": peptide,
+    #             f"qc{idx}_peptide_charges": charges,
+    #             f"N_qc{idx}_missing_values": _missing_counts_as_str(
+    #                 df_pept, reporter_cols
+    #             ),
+    #             f"reporter_intensity_corrected_qc{idx}_ave": ave,
+    #             f"reporter_intensity_corrected_qc{idx}_sd": std,
+    #             f"reporter_intensity_corrected_qc{idx}_cv": cv,
+    #             f"calibrated_retention_time_qc{idx}": _safe_numeric_stat(
+    #                 df_pept, "Calibrated retention time", lambda s: float(s.iloc[0])
+    #             ),
+    #             f"retention_length_qc{idx}": _safe_numeric_stat(
+    #                 df_pept, "Retention length", lambda s: float(s.iloc[0])
+    #             ),
+    #             f"N_of_scans_qc{idx}": _safe_numeric_stat(
+    #                 df_pept, "Number of scans", lambda s: float(s.iloc[0])
+    #             ),
+    #         }
+    #
+    #         result.update(dict_info_qc)
+    #     else:
+    #         dict_info_qc = {
+    #             f"qc{idx}_peptide_charges": "not detected",
+    #             f"N_qc{idx}_missing_values": "not detected",
+    #             f"reporter_intensity_corrected_qc{idx}_ave": "not detected",
+    #             f"reporter_intensity_corrected_qc{idx}_sd": "not detected",
+    #             f"reporter_intensity_corrected_qc{idx}_cv": "not detected",
+    #             f"calibrated_retention_time_qc{idx}": "not detected",
+    #             f"retention_length_qc{idx}": "not detected",
+    #             f"N_of_scans_qc{idx}": "not detected",
+    #         }
+    #         result.update(dict_info_qc)
 
     return pd.Series(result)

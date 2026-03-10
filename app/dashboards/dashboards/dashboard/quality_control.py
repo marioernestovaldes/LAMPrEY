@@ -26,8 +26,9 @@ METRIC_LABELS = {
     "Oxidations [%]": "Oxidations (%)",
     "N_missed_cleavages_eq_1 [%]": "Missed Cleavages Eq1 (%)",
     "Uncalibrated - Calibrated m/z [ppm] (ave)": "Delta m/z (ppm, avg)",
-    "calibrated_retention_time_qc1": "Calibrated RT QC1",
-    "calibrated_retention_time_qc2": "Calibrated RT QC2",
+    # Group-specific QC1/QC2 metrics are temporarily disabled.
+    # "calibrated_retention_time_qc1": "Calibrated RT QC1",
+    # "calibrated_retention_time_qc2": "Calibrated RT QC2",
     "__tmt_peptides_per_sample__": "Peptides per TMT Sample",
     "__tmt_protein_groups_per_sample__": "Protein Groups per TMT Sample",
 }
@@ -51,8 +52,9 @@ metric_options = [
         "Oxidations [%]",
         "N_missed_cleavages_eq_1 [%]",
         "Uncalibrated - Calibrated m/z [ppm] (ave)",
-        "calibrated_retention_time_qc1",
-        "calibrated_retention_time_qc2",
+        # Group-specific QC1/QC2 metrics are temporarily disabled.
+        # "calibrated_retention_time_qc1",
+        # "calibrated_retention_time_qc2",
     ]
 ]
 
