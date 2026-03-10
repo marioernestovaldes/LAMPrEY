@@ -208,21 +208,45 @@ def callbacks(app):
             json.dumps(scope_data or {}, sort_keys=True, default=str).encode("utf-8")
         ).hexdigest()
 
-    def _highlight_run_keys(scope_data, proposal, df):
+    def _metric_display_label(metric_name):
+        text = METRIC_LABELS.get(metric_name, str(metric_name))
+        text = text.replace("_", " ")
+        text = text.replace("[%]", "(%)")
+        text = text.replace("Uncalibrated - Calibrated m/z", "delta m/z")
+        text = text.replace(" [ppm] (ave)", " (ppm)")
+        return text
+
+    def _highlight_details(scope_data, proposal, df):
         if not proposal or df.empty:
-            return set()
+            return {}
         if proposal.get("scope_sig") != _scope_sig(scope_data):
-            return set()
+            return {}
         run_keys = set(proposal.get("run_keys_to_flag") or [])
         if not run_keys:
-            return set()
+            return {}
+        details = {}
+        for row in list(proposal.get("preview_rows") or []):
+            if row.get("action") != "flag":
+                continue
+            run_key = str(row.get("run_key") or "")
+            if not run_key or run_key not in run_keys:
+                continue
+            contributors = []
+            for contributor in list(row.get("top_contributors") or [])[:3]:
+                metric = contributor.get("metric")
+                if not metric:
+                    continue
+                contributors.append(_metric_display_label(metric))
+            details[run_key] = {
+                "contributors": contributors,
+            }
         if "RunKey" in df.columns:
             available = set(df["RunKey"].astype(str))
-            return run_keys.intersection(available)
+            return {key: value for key, value in details.items() if key in available}
         if "RawFile" in df.columns:
             available = set(df["RawFile"].astype(str))
-            return run_keys.intersection(available)
-        return set()
+            return {key: value for key, value in details.items() if key in available}
+        return {}
 
     @app.callback(
         Output("qc-figure", "figure"),
@@ -261,7 +285,8 @@ def callbacks(app):
         else:
             df["DateAcquired"] = pd.NaT
 
-        highlight_run_keys = _highlight_run_keys(data_in, anomaly_proposal, df)
+        highlight_details = _highlight_details(data_in, anomaly_proposal, df)
+        highlight_run_keys = set(highlight_details.keys())
 
         if x not in df.columns:
             x = "Index" if "Index" in df.columns else "RawFile"
@@ -379,6 +404,20 @@ def callbacks(app):
                 ]
                 highlight_mask = long_df["run_key"].isin(highlight_run_keys)
                 if highlight_mask.any():
+                    hovertext = []
+                    for _, highlight_row in long_df.loc[highlight_mask].iterrows():
+                        detail = highlight_details.get(str(highlight_row["run_key"]), {})
+                        contributors = list(detail.get("contributors") or [])
+                        contributor_text = (
+                            "Top anomaly driver: " + contributors[0]
+                            if len(contributors) == 1
+                            else "Top anomaly drivers: " + ", ".join(contributors)
+                            if contributors
+                            else "Anomaly candidate"
+                        )
+                        hovertext.append(
+                            f"{highlight_row['x_label']}<br>{contributor_text}"
+                        )
                     figure_data.append(
                         go.Scatter(
                             x=long_df.loc[highlight_mask, "x_pos"],
@@ -390,10 +429,10 @@ def callbacks(app):
                                 color=highlight_marker_color,
                                 line=dict(width=1.2, color=highlight_marker_line_color),
                             ),
-                            text=long_df.loc[highlight_mask, "x_label"],
+                            hovertext=hovertext,
                             customdata=long_df.loc[highlight_mask, "run_idx"],
                             hovertemplate=(
-                                "<b>%{text}</b><br>"
+                                "<b>%{hovertext}</b><br>"
                                 + f"{metric_label}: "
                                 + "%{y:.0f}<br>"
                                 + "Anomaly candidate<extra></extra>"
@@ -495,6 +534,28 @@ def callbacks(app):
             else raw_labels.isin(highlight_run_keys)
         )
         if highlight_series.any():
+            highlight_hovertext = []
+            if "RunKey" in df.columns:
+                highlight_keys = df.loc[highlight_series, "RunKey"].astype(str)
+            else:
+                highlight_keys = raw_labels[highlight_series].astype(str)
+            for run_key, label, acquired_value in zip(
+                highlight_keys,
+                sample_labels[highlight_series],
+                acquired[highlight_series],
+            ):
+                detail = highlight_details.get(str(run_key), {})
+                contributors = list(detail.get("contributors") or [])
+                contributor_text = (
+                    "Top anomaly driver: " + contributors[0]
+                    if len(contributors) == 1
+                    else "Top anomaly drivers: " + ", ".join(contributors)
+                    if contributors
+                    else "Anomaly candidate"
+                )
+                highlight_hovertext.append(
+                    f"{label}<br>{acquired_value}<br>{contributor_text}"
+                )
             figure_data.append(
                 go.Scatter(
                     x=x_values[highlight_series],
@@ -507,7 +568,7 @@ def callbacks(app):
                         line=dict(width=1.6, color=highlight_marker_line_color),
                     ),
                     customdata=df.index[highlight_series].to_list(),
-                    hovertext=(sample_labels[highlight_series] + "<br>" + acquired[highlight_series]),
+                    hovertext=highlight_hovertext,
                     text=None if x == "RawFile" else sample_labels[highlight_series],
                     hovertemplate=(
                         "<b>%{hovertext}</b><br>"

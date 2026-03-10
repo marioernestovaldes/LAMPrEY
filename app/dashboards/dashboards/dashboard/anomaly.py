@@ -183,7 +183,33 @@ layout = html.Div(
 )
 
 
-def compute_flag_proposals(qc_data, predictions):
+def _top_anomaly_contributors(run_key, shap_values, max_items=3):
+    if shap_values is None or shap_values.empty:
+        return []
+    run_key = str(run_key)
+    shap_frame = shap_values.copy()
+    shap_frame.index = shap_frame.index.astype(str)
+    if run_key not in shap_frame.index:
+        return []
+
+    series = pd.to_numeric(shap_frame.loc[run_key], errors="coerce").dropna()
+    if series.empty:
+        return []
+
+    negative = series[series < 0].sort_values()
+    ranked = negative if not negative.empty else series.sort_values()
+    contributors = []
+    for metric, value in ranked.head(max_items).items():
+        contributors.append(
+            {
+                "metric": str(metric),
+                "shap_value": float(value),
+            }
+        )
+    return contributors
+
+
+def compute_flag_proposals(qc_data, predictions, shap_values=None):
     if qc_data is None or qc_data.empty or predictions is None or predictions.empty:
         return {
             "run_keys_to_flag": [],
@@ -226,6 +252,11 @@ def compute_flag_proposals(qc_data, predictions):
                     "raw_file": row.get("RawFile", row[label_col]),
                     "action": action,
                     "current_flagged": bool(row["Flagged"]),
+                    "top_contributors": (
+                        _top_anomaly_contributors(key, shap_values)
+                        if action == "flag"
+                        else []
+                    ),
                 }
             )
 
@@ -409,7 +440,7 @@ def callbacks(app):
             logging.warning(f"Anomaly detection skipped for {project}/{pipeline}: {exc}")
             return None, f"empty-{project}-{pipeline}-{fraction_in}", cache_key, None
 
-        proposal = compute_flag_proposals(qc_data, predictions)
+        proposal = compute_flag_proposals(qc_data, predictions, df_shap)
         proposal.update(
             {
                 "project": project,
