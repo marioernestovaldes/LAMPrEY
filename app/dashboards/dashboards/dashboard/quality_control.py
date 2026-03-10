@@ -25,6 +25,24 @@ GRAPH_STYLE = {
     "minHeight": "0",
 }
 
+
+def _thin_ticks(tick_vals, tick_text, max_labels=15):
+    """Reduce tick density so labels are readable at any sample count.
+
+    Shows at most *max_labels* evenly-spaced labels, always keeping
+    the first and last tick visible.
+    """
+    n = len(tick_vals)
+    if n <= max_labels:
+        return tick_vals, tick_text
+    step = max(1, n // max_labels)
+    keep = set(range(0, n, step))
+    keep.add(n - 1)
+    return (
+        [v for i, v in enumerate(tick_vals) if i in keep],
+        [t for i, t in enumerate(tick_text) if i in keep],
+    )
+
 METRIC_LABELS = {
     "N_peptides": "Peptides Identified",
     "N_protein_groups": "Protein Groups Identified",
@@ -395,11 +413,12 @@ def callbacks(app):
                     yaxis={"automargin": True},
                     xaxis={"automargin": True},
                 )
+                thinned_vals, thinned_text = _thin_ticks(tickvals, ticktext)
                 fig.update_xaxes(
                     title_text=X_AXIS_LABELS.get(axis_mode, "Sample"),
                     tickmode="array",
-                    tickvals=tickvals,
-                    ticktext=ticktext,
+                    tickvals=thinned_vals,
+                    ticktext=thinned_text,
                     showgrid=False,
                     zeroline=False,
                     showline=True,
@@ -528,10 +547,13 @@ def callbacks(app):
         )
         if x == "Index":
             index_max = int(pd.to_numeric(df["Index"], errors="coerce").max() or 0)
+            tick_vals = list(range(1, index_max + 1))
+            tick_text = [f"Sample {i}" for i in tick_vals]
+            tick_vals, tick_text = _thin_ticks(tick_vals, tick_text)
             fig.update_xaxes(
-                dtick=1,
-                tick0=1,
-                tickformat="d",
+                tickmode="array",
+                tickvals=tick_vals,
+                ticktext=tick_text,
                 range=[0.5, float(max(1, index_max)) + 0.5],
             )
         elif x == "RawFile":

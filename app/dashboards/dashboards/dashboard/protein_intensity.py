@@ -18,7 +18,30 @@ X_AXIS_LABELS = {
 }
 X_AXIS_OPTIONS = [{"label": v, "value": k} for k, v in X_AXIS_LABELS.items()]
 
-GRAPH_STYLE = {"maxWidth": "100%"}
+GRAPH_STYLE = {
+    "width": "100%",
+    "height": "100%",
+    "flex": "1 1 auto",
+    "minHeight": "0",
+}
+
+
+def _thin_ticks(tick_vals, tick_text, max_labels=15):
+    """Reduce tick density so labels are readable at any sample count.
+
+    Shows at most *max_labels* evenly-spaced labels, always keeping
+    the first and last tick visible.
+    """
+    n = len(tick_vals)
+    if n <= max_labels:
+        return tick_vals, tick_text
+    step = max(1, n // max_labels)
+    keep = set(range(0, n, step))
+    keep.add(n - 1)
+    return (
+        [v for i, v in enumerate(tick_vals) if i in keep],
+        [t for i, t in enumerate(tick_text) if i in keep],
+    )
 
 PROTEIN_METRICS = {
     "Reporter intensity corrected": {
@@ -89,9 +112,11 @@ PROTEIN_METRIC_OPTIONS = [
 
 
 layout = html.Div(
-    [
+    style={"display": "flex", "flexDirection": "column", "height": "100%", "minHeight": "400px"},
+    children=[
         html.Div(
             className="pqc-qc-plot-toolbar",
+            style={"flex": "0 0 auto"},
             children=[
                 html.Div(
                     className="pqc-qc-metric-wrap",
@@ -139,15 +164,24 @@ layout = html.Div(
             "Select proteins and a metric to explore protein-level measurements.",
             id="protein-intensity-empty-state",
             className="pqc-empty-state",
+            style={"flex": "1 1 auto"},
         ),
         html.Div(id="protein-intensity-alert"),
         dcc.Loading(
             type="circle",
+            parent_style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+            style={"display": "flex", "flexDirection": "column", "flex": "1 1 auto", "height": "100%"},
             children=[
-                dcc.Graph(
-                    id="protein-intensity-figure",
-                    style={**GRAPH_STYLE, "display": "none"},
-                ),
+                html.Div(
+                    [
+                        dcc.Graph(
+                            id="protein-intensity-figure",
+                            responsive=True,
+                            style={**GRAPH_STYLE, "display": "none"},
+                        ),
+                    ],
+                    style={"flex": "1 1 auto", "display": "flex", "flexDirection": "column", "minHeight": "0"},
+                )
             ],
         ),
     ]
@@ -538,11 +572,9 @@ def callbacks(app):
                         hovertemplate=hovertemplate,
                     )
                 )
-        chart_height = 475 if len(proteins) == 1 else 450
         fig.update_layout(
             hovermode="closest",
-            height=chart_height,
-            margin=dict(l=32, r=20, b=50, t=20, pad=0),
+            margin=dict(l=32, r=20, b=40, t=24, pad=0),
             font=C.figure_font,
             plot_bgcolor="#ffffff",
             paper_bgcolor="#ffffff",
@@ -556,15 +588,21 @@ def callbacks(app):
             zeroline=False,
             showline=True,
             linecolor="#e2e8ed",
+            automargin=True,
         )
         if len(proteins) == 1:
+            n_points = int(single["x_pos"].max()) if len(single) > 0 else 1
+            tv = sample_tick_df["x_pos"].tolist()
+            tt = sample_tick_df["sample_label"].tolist()
+            tv, tt = _thin_ticks(tv, tt)
             fig.update_xaxes(
                 tickmode="array",
-                tickvals=sample_tick_df["x_pos"].tolist(),
-                ticktext=sample_tick_df["sample_label"].tolist(),
+                tickvals=tv,
+                ticktext=tt,
                 tickangle=-90,
-            title_standoff=20,
-        )
+                title_standoff=20,
+                range=[0.5, float(n_points) + 0.5],
+            )
         else:
             y_max = pd.to_numeric(multi["MetricValue"], errors="coerce").max()
             y_max = 1.0 if pd.isna(y_max) else float(y_max)
@@ -577,7 +615,8 @@ def callbacks(app):
             showline=True,
             linecolor="#e2e8ed",
             rangemode="tozero",
-            title_standoff=16,
+            title_standoff=30,
+            automargin=True,
         )
 
         return fig, config, shown_style, "", {"display": "none"}, None
