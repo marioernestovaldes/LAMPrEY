@@ -8,6 +8,7 @@ import dash
 import pandas as pd
 
 from dashboards.dashboards.dashboard.anomaly import (
+    _available_anomaly_columns,
     apply_anomaly_flag_changes,
     compute_flag_proposals,
 )
@@ -310,6 +311,94 @@ class DashboardToolsTestCase(SimpleTestCase):
             ],
         )
         self.assertEqual(qc_data["Flagged"].tolist(), [False, True])
+
+    def test__available_anomaly_columns_excludes_redundant_feature_families(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "MS/MS Submitted": 1000,
+                    "MS/MS Identified": 800,
+                    "MS/MS Identified [%]": 80.0,
+                    "N_protein_groups": 500,
+                    "N_protein_true_hits": 450,
+                    "N_protein_potential_contaminants": 30,
+                    "N_protein_reverse_seq": 20,
+                    "Protein_score_median": 12.0,
+                    "Protein_score_mean": 13.0,
+                    "Protein_qvalue_median": 0.001,
+                    "Protein_qvalue_lt_0_01 [%]": 97.0,
+                    "Protein_unique_peptides_median": 4,
+                    "Protein_razor_unique_peptides_median": 5,
+                    "Protein_unique_peptides_eq_1 [%]": 12.0,
+                    "Protein_msms_count_median": 6,
+                    "Peptide_score_median": 22.0,
+                    "Peptide_score_mean": 24.0,
+                    "Peptide_PEP_median": 0.0002,
+                    "Peptide_PEP_lt_0_01 [%]": 93.0,
+                    "N_peptides_last_amino_acid_K [%]": 40.0,
+                    "N_peptides_last_amino_acid_R [%]": 50.0,
+                    "N_peptides_last_amino_acid_other [%]": 10.0,
+                    "Uncalibrated - Calibrated m/z [ppm] (ave)": 1.2,
+                    "Uncalibrated - Calibrated m/z [Da] (ave)": 0.003,
+                    "PeakCapacity": 120.0,
+                    "Peak Width(ave)": 5.0,
+                    "MedianPeakWidthAt10%H(s)": 7.0,
+                    "MedianPeakWidthAt50%H(s)": 4.0,
+                    "TotalAnalysisTime(min)": 90.0,
+                    "NumMs2Scans": 10000,
+                    "NumMs1Scans": 1200,
+                    "MeanDutyCycle(s)": 1.4,
+                    "Ms2ScanRate(/s)": 12.0,
+                    "Day": 2,
+                    "Month": 1,
+                    "TMT1_missing_values": 14,
+                    "TMT1_peptide_count": 500,
+                    "TMT1_protein_group_count": 180,
+                }
+            ]
+        )
+
+        available = _available_anomaly_columns(df)
+
+        self.assertIn("MS/MS Identified [%]", available)
+        self.assertIn("N_protein_groups", available)
+        self.assertIn("N_protein_true_hits", available)
+        self.assertIn("Protein_score_median", available)
+        self.assertIn("Protein_qvalue_lt_0_01 [%]", available)
+        self.assertIn("Protein_unique_peptides_median", available)
+        self.assertIn("Protein_unique_peptides_eq_1 [%]", available)
+        self.assertIn("Peptide_score_median", available)
+        self.assertIn("Peptide_PEP_lt_0_01 [%]", available)
+        self.assertIn("N_peptides_last_amino_acid_K [%]", available)
+        self.assertIn("N_peptides_last_amino_acid_R [%]", available)
+        self.assertIn("Uncalibrated - Calibrated m/z [ppm] (ave)", available)
+        self.assertIn("PeakCapacity", available)
+        self.assertIn("MedianPeakWidthAt50%H(s)", available)
+        self.assertIn("TotalAnalysisTime(min)", available)
+        self.assertIn("NumMs2Scans", available)
+        self.assertIn("MeanDutyCycle(s)", available)
+        self.assertIn("TMT1_missing_values", available)
+
+        self.assertNotIn("MS/MS Submitted", available)
+        self.assertNotIn("MS/MS Identified", available)
+        self.assertNotIn("N_protein_potential_contaminants", available)
+        self.assertNotIn("N_protein_reverse_seq", available)
+        self.assertNotIn("Protein_score_mean", available)
+        self.assertNotIn("Protein_qvalue_median", available)
+        self.assertNotIn("Protein_razor_unique_peptides_median", available)
+        self.assertNotIn("Protein_msms_count_median", available)
+        self.assertNotIn("Peptide_score_mean", available)
+        self.assertNotIn("Peptide_PEP_median", available)
+        self.assertNotIn("N_peptides_last_amino_acid_other [%]", available)
+        self.assertNotIn("Uncalibrated - Calibrated m/z [Da] (ave)", available)
+        self.assertNotIn("Peak Width(ave)", available)
+        self.assertNotIn("MedianPeakWidthAt10%H(s)", available)
+        self.assertNotIn("NumMs1Scans", available)
+        self.assertNotIn("Ms2ScanRate(/s)", available)
+        self.assertNotIn("Day", available)
+        self.assertNotIn("Month", available)
+        self.assertNotIn("TMT1_peptide_count", available)
+        self.assertNotIn("TMT1_protein_group_count", available)
 
     @patch("dashboards.dashboards.dashboard.anomaly.T.set_rawfile_action")
     def test__apply_anomaly_flag_changes_applies_flag_and_unflag_actions(self, mock_action):

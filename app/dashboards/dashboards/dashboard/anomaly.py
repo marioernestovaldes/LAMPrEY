@@ -16,6 +16,42 @@ from omics.proteomics import ProteomicsQC
 from dashboards.dashboards.dashboard import config as C
 from dashboards.dashboards.dashboard import tools as T
 
+# features removed because of redundancy
+ANOMALY_EXCLUDED_COLUMNS = {
+    "MS/MS Submitted",
+    "MS/MS Identified",
+    "N_protein_potential_contaminants",
+    "N_protein_reverse_seq",
+    "N_peptides_last_amino_acid_other [%]",
+    "Protein_score_mean",
+    "Peptide_score_mean",
+    "Protein_qvalue_median",
+    "Peptide_PEP_median",
+    "Protein_peptides_median",
+    "Protein_razor_unique_peptides_median",
+    "Protein_msms_count_median",
+    "Uncalibrated - Calibrated m/z [Da] (ave)",
+    "Uncalibrated - Calibrated m/z [Da] (sd)",
+    "Peak Width(ave)",
+    "Peak Width (std)",
+    "MedianPeakWidthAt10%H(s)",
+    "NumMs1Scans",
+    "NumMs3Scans",
+    "Ms1ScanRate(/s)",
+    "Ms2ScanRate(/s)",
+    "Ms3ScanRate(/s)",
+    "MeanMs2TriggerRate(/Ms1Scan)",
+    "Day",
+    "Week",
+    "Month",
+    "Year",
+}
+
+ANOMALY_EXCLUDED_PATTERNS = (
+    re.compile(r"^TMT\d+_peptide_count$"),
+    re.compile(r"^TMT\d+_protein_group_count$"),
+)
+
 
 layout = html.Div(
     style={"display": "flex", "flexDirection": "row", "height": "100%", "minHeight": "400px", "gap": "12px"},
@@ -264,7 +300,12 @@ def _available_anomaly_columns(df):
     available = [
         column
         for column in C.qc_columns_options
-        if column in df.columns and column not in C.qc_columns_always
+        if (
+            column in df.columns
+            and column not in C.qc_columns_always
+            and column not in ANOMALY_EXCLUDED_COLUMNS
+            and not any(pattern.match(str(column)) for pattern in ANOMALY_EXCLUDED_PATTERNS)
+        )
     ]
 
     tmt_pattern = re.compile(r"^TMT\d+_(missing_values|peptide_count|protein_group_count)$")
@@ -276,7 +317,11 @@ def _available_anomaly_columns(df):
         ),
     )
     for column in detected_tmt:
-        if column not in available:
+        if (
+            column not in available
+            and column not in ANOMALY_EXCLUDED_COLUMNS
+            and not any(pattern.match(str(column)) for pattern in ANOMALY_EXCLUDED_PATTERNS)
+        ):
             available.append(column)
     return available
 

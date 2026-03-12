@@ -46,7 +46,7 @@ def _thin_ticks(tick_vals, tick_text, max_labels=15):
 PROTEIN_METRICS = {
     "Reporter intensity corrected": {
         "label": "Reporter intensity",
-        "y_title": "Log2Intensity",
+        "y_title": "Log2 Intensity",
         "empty_message": "No reporter intensity columns are available for these proteins.",
         "filename": "PQC-protein-explorer-intensity",
     },
