@@ -202,8 +202,15 @@ layout = html.Div(
                                         html.Div(
                                             className="pqc-kpi-card pqc-kpi-primary pqc-kpi-samples-card",
                                             children=[
-                                                html.Div("Samples", className="pqc-kpi-label"),
+                                                html.Div("Runs", className="pqc-kpi-label"),
                                                 html.Div("0", id="kpi-samples", className="pqc-kpi-value"),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            className="pqc-kpi-card pqc-kpi-primary pqc-kpi-samples-card",
+                                            children=[
+                                                html.Div("TMT Samples", className="pqc-kpi-label"),
+                                                html.Div("0", id="kpi-tmt-samples", className="pqc-kpi-value"),
                                             ],
                                         ),
                                         html.Div(
@@ -779,6 +786,7 @@ def sync_qc_table_columns(scope_data, current_values):
 
 @app.callback(
     Output("kpi-samples", "children"),
+    Output("kpi-tmt-samples", "children"),
     Output("kpi-median-protein-groups", "children"),
     Output("kpi-median-peptides", "children"),
     Output("kpi-median-msms", "children"),
@@ -797,17 +805,6 @@ def update_kpis(data, project, pipeline):
     if data is None:
         return (
             "0",
-            "--",
-            "--",
-            "--",
-            "--",
-            "--",
-            "--",
-            f"0 samples in {project_label} / {pipeline_label}",
-        )
-    df = pd.DataFrame(T.dashboard_rows(data))
-    if df.empty:
-        return (
             "0",
             "--",
             "--",
@@ -815,27 +812,95 @@ def update_kpis(data, project, pipeline):
             "--",
             "--",
             "--",
-            f"0 samples in {project_label} / {pipeline_label}",
+            f"0 runs in {project_label} / {pipeline_label}",
+        )
+    df = pd.DataFrame(T.dashboard_rows(data))
+    if df.empty:
+        return (
+            "0",
+            "0",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            "--",
+            f"0 runs in {project_label} / {pipeline_label}",
         )
 
-    def _median(column, suffix=""):
+    def _tmt_sample_count(frame):
+        tmt_channel_map = {}
+        for column in frame.columns:
+            if not isinstance(column, str):
+                continue
+            match = re.match(
+                r"^TMT(\d+)_(missing_values|peptide_count|protein_group_count)$",
+                column,
+            )
+            if match is None:
+                continue
+            channel_no = int(match.group(1))
+            tmt_channel_map.setdefault(channel_no, []).append(column)
+
+        if tmt_channel_map:
+            total = 0
+            for _, row in frame.iterrows():
+                row_channels = 0
+                for channel_cols in tmt_channel_map.values():
+                    present = False
+                    for column in channel_cols:
+                        value = row.get(column)
+                        if pd.notna(value):
+                            present = True
+                            break
+                    if present:
+                        row_channels += 1
+                total += row_channels
+            return int(total)
+
+        return 0
+
+    def _run_count(frame):
+        for column in ("RunKey", "SampleLabel", "RawFile"):
+            if column in frame.columns:
+                values = (
+                    frame[column]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                )
+                values = values[
+                    (values != "")
+                    & (~values.str.lower().isin({"nan", "none"}))
+                ]
+                if not values.empty:
+                    return int(values.nunique())
+        return int(len(frame.index))
+
+    def _median(column, unit=""):
         if column not in df.columns:
             return "--"
         series = pd.to_numeric(df[column], errors="coerce")
         if series.notna().sum() == 0:
             return "--"
         precision = 0 if is_integer_metric_name(column) else metric_display_precision(column, default=1)
-        return f"{series.median():.{precision}f}{suffix}"
+        value = f"{series.median():.{precision}f}"
+        return f"{value}{unit}" if unit else value
+
+    run_count = _run_count(df)
+    tmt_sample_count = _tmt_sample_count(df)
+    run_label = "run" if run_count == 1 else "runs"
 
     return (
-        str(len(df)),
+        str(run_count),
+        str(tmt_sample_count),
         _median("N_protein_groups"),
         _median("N_peptides"),
-        _median("MS/MS Identified [%]", "%"),
-        _median("N_missed_cleavages_eq_1 [%]", "%"),
-        _median("Oxidations [%]", "%"),
-        _median("Uncalibrated - Calibrated m/z [ppm] (ave)"),
-        f"{len(df)} samples in {project_label} / {pipeline_label}",
+        _median("MS/MS Identified [%]", " %"),
+        _median("N_missed_cleavages_eq_1 [%]", " %"),
+        _median("Oxidations [%]", " %"),
+        _median("Uncalibrated - Calibrated m/z [ppm] (ave)", " ppm"),
+        f"{run_count} {run_label} in {project_label} / {pipeline_label}",
     )
 
 
