@@ -591,7 +591,7 @@ def callbacks(app):
         # Clean axes
         fig.update_xaxes(showgrid=False, zeroline=False)
         fig.update_yaxes(showgrid=False, zeroline=False,
-                         side="left", ticklabelposition="outside")
+                         side="left", ticklabelposition="outside", autorange="reversed")
 
         # Size & spacing
         fig.update_layout(

@@ -55,6 +55,7 @@ from pycaret.anomaly import (
 )
 
 URL = os.getenv("OMICS_URL", "http://localhost:8000")
+ANOMALY_SESSION_ID = int(os.getenv("PQC_ANOMALY_SESSION_ID", "42"))
 
 logging.info(f"Dashboard API URL:{URL}", file=sys.stderr)
 
@@ -977,10 +978,12 @@ def detect_anomalies(
         verbose=False,
         html=False,
         n_jobs=n_jobs,
+        session_id=ANOMALY_SESSION_ID,
         numeric_features=selected_cols,
     )
 
     logging.info(f"Create anomaly model: {algorithm}")
+    model_kws.setdefault("random_state", ANOMALY_SESSION_ID)
     model = create_model(algorithm, **model_kws)
     pipeline = get_config("pipeline")
     data = pipeline.transform(df_all)

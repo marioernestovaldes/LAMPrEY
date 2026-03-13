@@ -18,6 +18,7 @@ from dashboards.dashboards.dashboard.index import (
     update_kpis,
 )
 from dashboards.dashboards.dashboard.tools import (
+    ANOMALY_SESSION_ID,
     _normalize_max_features,
     _iter_selected_results,
     dashboard_result_data,
@@ -229,6 +230,10 @@ class DashboardToolsTestCase(SimpleTestCase):
 
         df_train = mock_setup.call_args.args[0]
         self.assertEqual(len(df_train.index), 3)
+        self.assertEqual(mock_setup.call_args.kwargs["session_id"], ANOMALY_SESSION_ID)
+        self.assertEqual(
+            mock_create_model.call_args.kwargs["random_state"], ANOMALY_SESSION_ID
+        )
         self.assertEqual(predictions["Anomaly"].tolist(), [0, 1, 0])
         self.assertEqual(list(shap_values.columns), ["MetricB", "MetricA"])
 
