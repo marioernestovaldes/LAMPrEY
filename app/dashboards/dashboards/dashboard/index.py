@@ -896,10 +896,10 @@ def update_kpis(data, project, pipeline):
         str(tmt_sample_count),
         _median("N_protein_groups"),
         _median("N_peptides"),
-        _median("MS/MS Identified [%]", " %"),
-        _median("N_missed_cleavages_eq_1 [%]", " %"),
-        _median("Oxidations [%]", " %"),
-        _median("Uncalibrated - Calibrated m/z [ppm] (ave)", " ppm"),
+        _median("MS/MS Identified [%]", "%"),
+        _median("N_missed_cleavages_eq_1 [%]", "%"),
+        _median("Oxidations [%]", "%"),
+        _median("Uncalibrated - Calibrated m/z [ppm] (ave)", "ppm"),
         f"{run_count} {run_label} in {project_label} / {pipeline_label}",
     )
 
