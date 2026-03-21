@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -25,6 +28,11 @@ GRAPH_STYLE = {
     "minHeight": "0",
 }
 
+HIGHLIGHT_MARKER_COLOR = "#ef4444"
+HIGHLIGHT_MARKER_LINE_COLOR = "#7f1d1d"
+FLAGGED_MARKER_COLOR = "#f59e0b"
+FLAGGED_MARKER_LINE_COLOR = "#92400e"
+
 
 def _thin_ticks(tick_vals, tick_text, max_labels=15):
     """Reduce tick density so labels are readable at any sample count.
@@ -42,6 +50,21 @@ def _thin_ticks(tick_vals, tick_text, max_labels=15):
         [v for i, v in enumerate(tick_vals) if i in keep],
         [t for i, t in enumerate(tick_text) if i in keep],
     )
+
+
+def _scope_sig(scope_data):
+    return hashlib.md5(
+        json.dumps(scope_data or {}, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _highlight_run_keys(scope_data, proposal):
+    if not proposal:
+        return set()
+    if proposal.get("scope_sig") != _scope_sig(scope_data):
+        return set()
+    return {str(key) for key in list(proposal.get("run_keys_to_flag") or []) if key is not None}
+
 
 PROTEIN_METRICS = {
     "Reporter intensity corrected": {
@@ -276,6 +299,7 @@ def callbacks(app):
         Input("project", "value"),
         Input("pipeline", "value"),
         Input("qc-scope-data", "data"),
+        Input("anomaly-proposed-flags", "data"),
         prevent_initial_call="initial_duplicate",
     )
     def plot_protein_intensity(
@@ -286,6 +310,7 @@ def callbacks(app):
         project,
         pipeline,
         scope_data,
+        anomaly_proposal,
         **kwargs,
     ):
         metric_key = (
@@ -373,7 +398,16 @@ def callbacks(app):
         if "RawFile" not in data_df.columns:
             return go.Figure(), config, hidden_style, "Sample names were not found in the intensity data.", {"display": "flex"}, None
 
-        axis_df = scope_df[["RawFile", "Index", "DateAcquired"]].copy()
+        scope_df["run_key"] = (
+            scope_df["RunKey"].astype(str)
+            if "RunKey" in scope_df.columns
+            else scope_df["RawFile"].astype(str)
+        )
+        scope_df["Flagged"] = scope_df.get("Flagged", False)
+        scope_df["Flagged"] = scope_df["Flagged"].fillna(False).astype(bool)
+        highlight_run_keys = _highlight_run_keys(scope_data, anomaly_proposal)
+
+        axis_df = scope_df[["RawFile", "Index", "DateAcquired", "run_key", "Flagged"]].copy()
         axis_df["RawFileLabel"] = axis_df["RawFile"]
         x_axis = x_axis if x_axis in X_AXIS_LABELS else "Index"
         metric_is_intensity = metric_key == "Reporter intensity corrected"
@@ -441,7 +475,17 @@ def callbacks(app):
             if metric_is_intensity:
                 single = (
                     single.groupby(
-                        ["RawFile", "Channel", "ChannelNo", "Index", "DateAcquired", "RawFileLabel", "run_idx"],
+                        [
+                            "RawFile",
+                            "Channel",
+                            "ChannelNo",
+                            "Index",
+                            "DateAcquired",
+                            "RawFileLabel",
+                            "run_idx",
+                            "run_key",
+                            "Flagged",
+                        ],
                         as_index=False,
                     )[["Intensity", "MetricValue"]]
                     .median()
@@ -478,7 +522,15 @@ def callbacks(app):
             else:
                 single = (
                     single.groupby(
-                        ["RawFile", "Index", "DateAcquired", "RawFileLabel", "run_idx"],
+                        [
+                            "RawFile",
+                            "Index",
+                            "DateAcquired",
+                            "RawFileLabel",
+                            "run_idx",
+                            "run_key",
+                            "Flagged",
+                        ],
                         as_index=False,
                     )["MetricValue"]
                     .median()
@@ -502,6 +554,9 @@ def callbacks(app):
                     "Raw file: %{customdata[0]}<extra></extra>"
                 )
 
+            single["is_highlighted"] = single["run_key"].astype(str).isin(highlight_run_keys)
+            single["is_flagged"] = single["Flagged"].fillna(False).astype(bool) & ~single["is_highlighted"]
+
             fig = go.Figure(
                 data=[
                     go.Scatter(
@@ -521,10 +576,48 @@ def callbacks(app):
                     )
                 ]
             )
+            if single["is_flagged"].any():
+                flagged_points = single.loc[single["is_flagged"]]
+                fig.add_trace(
+                    go.Scatter(
+                        x=flagged_points["x_pos"],
+                        y=flagged_points["MetricValue"],
+                        mode="markers",
+                        showlegend=False,
+                        marker=dict(
+                            size=12,
+                            color=FLAGGED_MARKER_COLOR,
+                            line=dict(width=1.4, color=FLAGGED_MARKER_LINE_COLOR),
+                        ),
+                        text=flagged_points["x_label"],
+                        customdata=customdata[single["is_flagged"].to_numpy()],
+                        hovertemplate=hovertemplate,
+                    )
+                )
+            if single["is_highlighted"].any():
+                highlighted_points = single.loc[single["is_highlighted"]]
+                fig.add_trace(
+                    go.Scatter(
+                        x=highlighted_points["x_pos"],
+                        y=highlighted_points["MetricValue"],
+                        mode="markers",
+                        showlegend=False,
+                        marker=dict(
+                            size=13,
+                            color=HIGHLIGHT_MARKER_COLOR,
+                            line=dict(width=1.6, color=HIGHLIGHT_MARKER_LINE_COLOR),
+                        ),
+                        text=highlighted_points["x_label"],
+                        customdata=customdata[single["is_highlighted"].to_numpy()],
+                        hovertemplate=hovertemplate,
+                    )
+                )
         else:
             multi = long_df[long_df[protein_col].isin(proteins)].copy()
             if multi.empty:
                 return go.Figure(), config, hidden_style, f"No {metric_spec['label'].lower()} values were found for the selected proteins.", {"display": "flex"}, None
+
+            protein_positions = {protein_name: idx + 1 for idx, protein_name in enumerate(proteins)}
 
             fig = go.Figure()
             palette = px.colors.qualitative.Pastel
@@ -532,6 +625,7 @@ def callbacks(app):
                 protein_df = multi[multi[protein_col] == protein_name]
                 if protein_df.empty:
                     continue
+                protein_x = protein_positions[protein_name]
                 if metric_is_intensity:
                     customdata = np.stack(
                         [
@@ -564,7 +658,7 @@ def callbacks(app):
                     )
                 fig.add_trace(
                     go.Violin(
-                        x=np.repeat(protein_name, len(protein_df)),
+                        x=np.repeat(protein_x, len(protein_df)),
                         y=protein_df["MetricValue"],
                         name=protein_name,
                         side="positive",
@@ -617,6 +711,12 @@ def callbacks(app):
                 range=[0.5, float(n_points) + 0.5],
             )
         else:
+            fig.update_xaxes(
+                tickmode="array",
+                tickvals=[idx + 1 for idx, _ in enumerate(proteins)],
+                ticktext=proteins,
+                range=[0.5, float(max(1, len(proteins))) + 0.5],
+            )
             y_max = pd.to_numeric(multi["MetricValue"], errors="coerce").max()
             y_max = 1.0 if pd.isna(y_max) else float(y_max)
             fig.update_yaxes(range=[-0.35, y_max + 0.8])
