@@ -1,4 +1,4 @@
-# How to create a new pipeline?
+## How to create a new pipeline?
 
 A pipeline defines the processing steps for raw data files. Each pipeline belongs to a project and can be configured with specific parameters and input files for [Maxquant](https://maxquant.org/) and [RawTools](https://github.com/kevinkovalchik/RawTools). To add a new pipeline, you need to have at least one project set up in the system. If you haven't created a project yet, please refer to [Create a project](how-to-add-a-project.md) before proceeding.
 

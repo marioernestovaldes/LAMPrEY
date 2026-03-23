@@ -1,4 +1,4 @@
-# How to submit RAW files to an existing pipeline?
+## How to submit RAW files to an existing pipeline?
 
 There are two ways to add new raw files to an existing pipeline.
 

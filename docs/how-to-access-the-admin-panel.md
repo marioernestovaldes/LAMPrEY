@@ -1,4 +1,4 @@
-# How to access the admin panel?
+## How to access the admin panel?
 
 If you followed the steps in the [installation](installation.md) you
 have already created an admin account and started the LAMPrEY server.

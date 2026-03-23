@@ -1,8 +1,9 @@
-# How to prepare `mqpar.xml` for a pipeline?
+## How to prepare `mqpar.xml` for a pipeline?
 
 LAMPrEY can use a custom `mqpar.xml`, but the file must follow a few rules so the server can turn it into a reusable single-run template.
 
-If you do not upload a custom file, the application uses the bundled `mqpar_2.4.12.0.xml` template built to work with MaxQuant v2.4.12.0 automatically.
+!!! note
+    If you do not upload a custom file, the application uses the bundled `mqpar_2.4.12.0.xml` template built to work with MaxQuant v2.4.12.0 automatically. This file contains the default paramteres frm Maxquant to process TMT-11 data. You can use it as a reference for the required structure and placeholders when preparing your own `mqpar.xml` file. The bundled template is a good starting point if you are using the recommended MaxQuant version and do not need custom search settings.
 
 ## Recommended workflow
 
@@ -12,15 +13,6 @@ If you do not upload a custom file, the application uses the bundled `mqpar_2.4.
 4. Export `mqpar.xml`.
 5. Check that the file contains only one raw-file entry and one experiment entry.
 6. Upload it when creating the pipeline in LAMPrEY.
-
-## When to avoid a custom file
-
-Use the bundled default template when:
-
-- you are using the recommended bundled MaxQuant version
-- you do not need custom search settings
-- you want the lowest-friction setup path
-
 
 ## Core requirement
 

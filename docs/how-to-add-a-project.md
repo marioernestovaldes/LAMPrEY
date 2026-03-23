@@ -1,8 +1,8 @@
-# How to create a new project?
+## How to create a new project?
 
 A project is a logical container for pipelines. Each project can contain multiple pipelines and all files 
 submitted to certain or added within a certain project will be stored in a dedicated project directory in
-the datalake. 
+the [datalake](datalake.md). 
 
 To set up a new pipeline, login to the [admin panel](how-to-access-the-admin-panel.md).
 

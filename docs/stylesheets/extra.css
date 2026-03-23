@@ -176,3 +176,14 @@
         animation: none;
     }
 }
+
+.mermaid {
+    display: flex;
+    justify-content: center;
+    margin: 1.5rem 0;
+}
+
+.mermaid svg {
+    width: min(100%, 900px);
+    height: auto;
+}

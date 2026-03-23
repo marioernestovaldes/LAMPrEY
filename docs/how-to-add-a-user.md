@@ -1,4 +1,4 @@
-# How to add a user?
+## How to add a user?
 
 Accounts for new users can be created directly from the admin panel. Sign in to the [admin panel](how-to-access-the-admin-panel.md), and click the `+ Add` button beside `Users` to open the user creation form.
 
