@@ -155,6 +155,23 @@
   text-overflow: ellipsis;
 }
 
+.table-description-cell {
+  width: 32%;
+  min-width: 240px;
+}
+
+.table-description-text {
+  display: -webkit-box;
+  max-width: 44ch;
+  overflow: hidden;
+  color: #314a67;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .upload-queue-name {
   max-width: 360px;
 }
