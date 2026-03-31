@@ -177,6 +177,7 @@
     }
 }
 
+<<<<<<< HEAD
 .mermaid {
     display: flex;
     justify-content: center;
@@ -186,4 +187,48 @@
 .mermaid svg {
     width: min(100%, 900px);
     height: auto;
+=======
+.md-footer {
+    background:
+        linear-gradient(135deg, #2f86b8 0%, #2f86b8 55%, #266f97 100%);
+}
+
+.md-footer__inner {
+    background: transparent;
+}
+
+.md-footer__link {
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.md-footer__link:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.md-footer__direction {
+    color: rgba(219, 242, 247, 0.82);
+}
+
+.md-footer-meta {
+    background: #0d2430;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.md-footer-meta__inner,
+.md-copyright,
+.md-copyright__highlight,
+.md-social {
+    color: rgba(225, 238, 242, 0.86);
+}
+
+.md-copyright a,
+.md-social__link {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.md-copyright a:hover,
+.md-social__link:hover {
+    color: #7fe0d5;
+>>>>>>> 17b1e2f (feat: Add footer styles with gradient background and link hover effects)
 }
