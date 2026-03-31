@@ -11,10 +11,12 @@ from maxquant.models import Result
 
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 
 
 from django.test import Client
 from django.urls import reverse
+from rest_framework.authtoken.models import Token
 from user.models import User
 from api.views import get_protein_quant_fn
 
@@ -76,6 +78,40 @@ class ApiTestCase(TestCase):
         ]
         assert actual == expected, actual
 
+    def test__token_create_requires_auth(self):
+        c = Client()
+        response = c.post(reverse("api:token"))
+        assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    def test__token_create_returns_reusable_token(self):
+        c = Client()
+        c.force_login(self.user)
+
+        response = c.post(reverse("api:token"))
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        payload = response.json()
+
+        assert payload["created"] is True, payload
+        assert payload["token"], payload
+        assert Token.objects.filter(user=self.user, key=payload["token"]).exists()
+
+        response = c.post(reverse("api:token"))
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        second_payload = response.json()
+
+        assert second_payload["created"] is False, second_payload
+        assert second_payload["token"] == payload["token"], second_payload
+
+    def test__token_delete_revokes_current_users_token(self):
+        token = Token.objects.create(user=self.user)
+        c = Client()
+        c.force_login(self.user)
+
+        response = c.delete(reverse("api:token"))
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert response.json() == {"deleted": True}, response.json()
+        assert not Token.objects.filter(pk=token.pk).exists()
+
     def test__projects_unauthenticated(self):
         """Verify that unauthenticated requests are rejected."""
         c = Client()
@@ -103,12 +139,64 @@ class ApiTestCase(TestCase):
         data = response.json()
         assert len(data) == 1
         assert data[0]["name"] == "pipe"
+        assert data[0]["uuid"] == str(self.pipeline.uuid)
+
+    def test__pipeline_uploaders(self):
+        c = Client()
+        c.force_login(self.user)
+        url = f"{URL}/api/pipeline-uploaders"
+        response = c.post(
+            url,
+            {"project": self.project.slug, "pipeline": self.pipeline.slug},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        assert response.json() == [
+            {"label": self.user.email, "value": self.user.email}
+        ], response.json()
 
     def test__pipelines_unauthenticated(self):
         """Verify unauthenticated pipeline requests are rejected."""
         c = Client()
         url = f"{URL}/api/pipelines"
         response = c.post(url, {"project": "project"}, content_type="application/json")
+        assert response.status_code == 403, f"Expected 403, got {response.status_code}"
+
+    def test__projects_accept_token_auth(self):
+        token = Token.objects.create(user=self.user)
+        c = Client()
+        response = c.post(
+            f"{URL}/api/projects",
+            HTTP_AUTHORIZATION=f"Token {token.key}",
+        )
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["slug"] == self.project.slug
+
+    def test__pipelines_accept_token_auth(self):
+        token = Token.objects.create(user=self.user)
+        c = Client()
+        response = c.post(
+            f"{URL}/api/pipelines",
+            {"project": self.project.slug},
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Token {token.key}",
+        )
+
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["uuid"] == str(self.pipeline.uuid)
+
+    def test__invalid_token_is_rejected(self):
+        c = Client()
+        response = c.post(
+            f"{URL}/api/projects",
+            HTTP_AUTHORIZATION="Token invalid-token",
+        )
         assert response.status_code == 403, f"Expected 403, got {response.status_code}"
 
     def test__pipelines_reject_uid_impersonation_without_auth(self):
@@ -507,3 +595,42 @@ class ApiTestCase(TestCase):
         assert "MaxQuant parse error" in (
             result.output_dir_maxquant / "maxquant.err"
         ).read_text(encoding="utf-8")
+
+
+class ApiDemoDocsSmokeTestCase(TestCase):
+    def test_seeded_demo_supports_documented_read_flow(self):
+        call_command("bootstrap_demo", user="demo-api@example.com", with_results=True)
+
+        user = User.objects.get(email="demo-api@example.com")
+        project = Project.objects.get(name="Demo Project")
+        pipeline = Pipeline.objects.get(name="TMT QC Demo", project=project)
+
+        c = Client()
+        c.force_login(user)
+
+        projects_response = c.post(reverse("api:projects"))
+        assert projects_response.status_code == 200, projects_response.content
+        projects = projects_response.json()
+        assert any(item["slug"] == project.slug for item in projects), projects
+
+        pipelines_response = c.post(
+            reverse("api:mq-pipelines"),
+            {"project": project.slug},
+            content_type="application/json",
+        )
+        assert pipelines_response.status_code == 200, pipelines_response.content
+        pipelines = pipelines_response.json()
+        assert any(
+            item["slug"] == pipeline.slug and item["uuid"] == str(pipeline.uuid)
+            for item in pipelines
+        ), pipelines
+
+        qc_response = c.post(
+            reverse("api:qc-data"),
+            {"project": project.slug, "pipeline": pipeline.slug, "data_range": 3},
+            content_type="application/json",
+        )
+        assert qc_response.status_code == 200, qc_response.content
+        qc_payload = qc_response.json()
+        assert "RawFile" in qc_payload, qc_payload
+        assert len(qc_payload["RawFile"]) == 3, qc_payload

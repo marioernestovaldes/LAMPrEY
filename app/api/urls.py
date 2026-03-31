@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path("token", views.ApiTokenView.as_view(), name="token"),
     path("projects", views.ProjectNames.as_view(), name="projects"),
     path("pipelines", views.PipelineNames.as_view(), name="mq-pipelines"),
     path("pipeline-uploaders", views.PipelineUploaders.as_view(), name="pipeline-uploaders"),

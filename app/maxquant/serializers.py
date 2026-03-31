@@ -11,7 +11,7 @@ class RawFileSerializer(serializers.ModelSerializer):
 class PipelineSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pipeline
-        fields = ("slug", "name", "path_as_str")
+        fields = ("uuid", "slug", "name", "path_as_str")
         name = serializers.SerializerMethodField()
 
         def get_name(self, instance):

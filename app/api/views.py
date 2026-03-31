@@ -18,6 +18,8 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.authtoken.models import Token
 
 from django.http import JsonResponse
 from django.conf import settings
@@ -164,6 +166,30 @@ class PipelineUploaders(generics.ListAPIView):
                 continue
             output.append({"label": email, "value": email})
         return JsonResponse(output, safe=False, status=200)
+
+
+class ApiTokenView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [SessionAuthentication]
+
+    def post(self, request, *args, **kwargs):
+        token, created = Token.objects.get_or_create(user=request.user)
+        return Response(
+            {
+                "token": token.key,
+                "created": created,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def delete(self, request, *args, **kwargs):
+        deleted, _ = Token.objects.filter(user=request.user).delete()
+        return Response(
+            {
+                "deleted": bool(deleted),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class QcDataAPI(generics.ListAPIView):
