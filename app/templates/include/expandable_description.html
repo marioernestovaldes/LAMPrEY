@@ -1,0 +1,11 @@
+{% if description|length > 240 %}
+  <details class="run-meta-expandable">
+    <summary class="run-meta-expandable-toggle">
+      <span class="run-meta-tile-value run-meta-description-value run-meta-expandable-preview">{{ description|truncatechars:240 }}</span>
+      <span class="run-meta-expandable-link" aria-hidden="true"></span>
+    </summary>
+    <div class="run-meta-tile-value run-meta-description-value run-meta-expandable-content">{{ description }}</div>
+  </details>
+{% else %}
+  <div class="run-meta-tile-value run-meta-description-value">{{ description }}</div>
+{% endif %}

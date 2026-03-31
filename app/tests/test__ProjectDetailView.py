@@ -61,3 +61,15 @@ class ProjectDetailViewTestCase(TestCase):
         url = reverse("project:detail", kwargs={"slug": self.project.slug})
         response = self.client.get(url)
         self.assertEqual(response.status_code, 403)
+
+    def test_project_detail_collapses_long_description(self):
+        self.project.description = "Long project description. " * 20
+        self.project.save(update_fields=["description"])
+
+        self.client.force_login(self.user)
+        url = reverse("project:detail", kwargs={"slug": self.project.slug})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="run-meta-expandable"', html=False)
+        self.assertContains(response, 'class="run-meta-expandable-link"', html=False)

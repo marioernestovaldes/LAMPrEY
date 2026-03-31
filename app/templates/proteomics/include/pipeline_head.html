@@ -12,7 +12,7 @@
         </div>
         <div class="run-meta-tile">
           <div class="run-meta-tile-label">Description</div>
-          <div class="run-meta-tile-value">{{ pipeline.description }}</div>
+          {% include "include/expandable_description.html" with description=pipeline.description %}
         </div>
         <div class="run-meta-tile">
           <div class="run-meta-tile-label">Pipeline ID</div>

@@ -15,7 +15,7 @@
           </div>
           <div class="run-meta-tile">
             <div class="run-meta-tile-label">Description</div>
-            <div class="run-meta-tile-value">{{ object.description }}</div>
+            {% include "include/expandable_description.html" with description=object.description %}
           </div>
           <div class="run-meta-tile run-meta-tile-ghost" aria-hidden="true">
             <div class="run-meta-tile-label">Slug</div>

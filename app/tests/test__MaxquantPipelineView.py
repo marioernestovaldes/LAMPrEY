@@ -131,3 +131,18 @@ class MaxquantPipelineViewTestCase(TestCase):
         })
         response = self.client.get(url)
         self.assertEqual(response.status_code, 404)
+
+    def test_pipeline_view_collapses_long_description(self):
+        self.pipeline.description = "Long pipeline description. " * 20
+        self.pipeline.save(update_fields=["description"])
+
+        self.client.force_login(self.user)
+        url = reverse("maxquant:detail", kwargs={
+            "project": self.project.slug,
+            "pipeline": self.pipeline.slug
+        })
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="run-meta-expandable"', html=False)
+        self.assertContains(response, 'class="run-meta-expandable-link"', html=False)

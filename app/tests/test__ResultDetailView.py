@@ -137,3 +137,18 @@ class ResultDetailViewTestCase(TestCase):
         joined_warnings = "\n".join(response.context["data_warnings"])
         self.assertIn("`Score`", joined_warnings)
         self.assertContains(response, "Channel intensity distribution (protein groups)")
+
+    @patch("maxquant.views.isfile", return_value=True)
+    @patch("maxquant.views.pd.read_csv")
+    def test_result_detail_collapses_long_description(self, mock_read_csv, mock_isfile):
+        mock_read_csv.return_value = pd.DataFrame({"Intensity": [1], "Retention time": [0.1]})
+        self.pipeline.description = "Long pipeline description. " * 20
+        self.pipeline.save(update_fields=["description"])
+
+        self.client.force_login(self.user)
+        url = reverse("maxquant:mq_detail", kwargs={"pk": self.result.pk})
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="run-meta-expandable"', html=False)
+        self.assertContains(response, 'class="run-meta-expandable-link"', html=False)
