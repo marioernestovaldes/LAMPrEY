@@ -23,8 +23,7 @@ curl \
   -X POST \
   http://127.0.0.1:8000/api/projects
 ```
-
-Otherwise, see the next section for how to bootstrap a token from the web login.
+Here, replace the token value (`xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`) with your actual token and `http://127.0.0.1:8000/api/projects` with the appropriate API endpoint. Otherwise, see the next section for how to bootstrap a token from the web login.
 
 ### Bootstrap a token from the current web login
 
@@ -33,7 +32,7 @@ At the moment, the first token is created from an authenticated web session. Use
 Set your local values first:
 
 ```bash
-BASE="http://127.0.0.1:8000"
+BASE="http://127.0.0.1:8000"  # change if the instance is at a different URL
 EMAIL="user@email.com"
 PASSWORD="123"
 ```
@@ -140,7 +139,7 @@ A practical read flow is:
 
 The seeded demo is suitable for read endpoints. It is not the right example for uploads.
 
-## `/api/projects`
+### `/api/projects`
 
 Returns the projects visible to the authenticated user.
 
@@ -161,7 +160,7 @@ Example response:
 ]
 ```
 
-## `/api/pipelines`
+### `/api/pipelines`
 
 Returns pipelines in a project visible to the authenticated user.
 
@@ -188,7 +187,7 @@ Example response:
 
 The returned `uuid` is the value you pass as `pid` to `/api/upload/raw`.
 
-## `/api/pipeline-uploaders`
+### `/api/pipeline-uploaders`
 
 Returns the uploaders visible for a pipeline.
 
@@ -218,7 +217,7 @@ Example response:
 ]
 ```
 
-## `/api/upload/raw`
+### `/api/upload/raw`
 
 Uploads a new RAW file to an existing pipeline and creates a corresponding run.
 
@@ -241,7 +240,7 @@ Behavior notes:
 - the demo pipeline is treated as read-only in the web UI and should not be used as an upload target
 - repeated uploads with the same displayed filename still create independent runs
 
-## `/api/qc-data`
+### `/api/qc-data`
 
 Returns QC data for a pipeline as a JSON object of column-to-list mappings.
 
@@ -266,7 +265,7 @@ The response can include RawTools-derived columns, MaxQuant summary fields, and 
 - `TMT<n>_peptide_count`
 - `TMT<n>_protein_group_count`
 
-## `/api/protein-names`
+### `/api/protein-names`
 
 Returns protein-group identifiers, FASTA headers, mean scores, and mean intensities across the selected run set.
 
@@ -287,7 +286,7 @@ curl \
   https://example.com/api/protein-names
 ```
 
-## `/api/protein-groups`
+### `/api/protein-groups`
 
 Returns protein-group level data for selected proteins and runs.
 
@@ -308,7 +307,7 @@ curl \
   https://example.com/api/protein-groups
 ```
 
-## `/api/rawfile`
+### `/api/rawfile`
 
 Updates run state for selected files.
 
@@ -335,7 +334,7 @@ curl \
   https://example.com/api/rawfile
 ```
 
-## `/api/flag/create` and `/api/flag/delete`
+### `/api/flag/create` and `/api/flag/delete`
 
 These endpoints provide explicit flag toggles and use the same selection rules as `/api/rawfile`.
 
