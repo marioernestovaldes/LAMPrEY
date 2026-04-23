@@ -1,3 +1,7 @@
+import csv
+import hashlib
+import io
+import json
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -8,6 +12,7 @@ import dash
 import pandas as pd
 
 from dashboards.dashboards.dashboard import anomaly
+from dashboards.dashboards.dashboard import quality_control
 from dashboards.dashboards.dashboard.anomaly import (
     _available_anomaly_columns,
     apply_anomaly_flag_changes,
@@ -468,6 +473,68 @@ class DashboardToolsTestCase(SimpleTestCase):
         self.assertEqual(result["filename"], "anomaly-demo-project-demo-pipeline.zip")
         archive = result["content"]
         self.assertTrue(archive)
+
+    def test__download_qc_data_includes_anomaly_prediction_and_drivers(self):
+        app = self._CallbackApp()
+        quality_control.callbacks(app)
+        download_qc_data = app.callbacks["download_qc_data"]
+
+        qc_scope = {
+            "rows": [
+                {
+                    "RunKey": "rf1",
+                    "RawFile": "DEMO_01",
+                    "SampleLabel": "DEMO_01",
+                    "N_protein_groups": 44,
+                },
+                {
+                    "RunKey": "rf2",
+                    "RawFile": "DEMO_02",
+                    "SampleLabel": "DEMO_02",
+                    "N_protein_groups": 34,
+                },
+            ]
+        }
+        scope_sig = hashlib.md5(
+            json.dumps(qc_scope, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        predictions_payload = pd.DataFrame(
+            {"Anomaly": [0, 1], "Anomaly_Score": [0.11, 0.91]},
+            index=["rf1", "rf2"],
+        ).to_json(orient="split")
+        proposal = {
+            "scope_sig": scope_sig,
+            "preview_rows": [
+                {
+                    "run_key": "rf2",
+                    "action": "flag",
+                    "top_contributors": [
+                        {"metric": "NumEsiInstabilityFlags", "shap_value": -0.4},
+                        {"metric": "N_protein_groups", "shap_value": -0.2},
+                    ],
+                }
+            ],
+            "already_flagged_rows": [],
+        }
+
+        result = download_qc_data(
+            1,
+            qc_scope,
+            predictions_payload,
+            proposal,
+            "demo-project",
+            "demo-pipeline",
+        )
+
+        self.assertEqual(result["filename"], "qc-metrics-demo-project-demo-pipeline.csv")
+        rows = list(csv.DictReader(io.StringIO(result["content"])))
+        self.assertEqual(rows[0]["Anomaly Prediction"], "Normal")
+        self.assertEqual(rows[0]["Anomaly Drivers"], "")
+        self.assertEqual(rows[1]["Anomaly Prediction"], "Anomaly")
+        self.assertEqual(
+            rows[1]["Anomaly Drivers"],
+            "ESI Instability Flags, Protein Groups Identified",
+        )
 
     def test__available_anomaly_columns_excludes_redundant_feature_families(self):
         df = pd.DataFrame(

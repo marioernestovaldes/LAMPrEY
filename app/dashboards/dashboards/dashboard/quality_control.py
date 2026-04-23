@@ -219,6 +219,54 @@ def callbacks(app):
         text = text.replace(" [ppm] (ave)", " (ppm)")
         return text
 
+    def _load_predictions_frame(predictions_payload):
+        if not predictions_payload:
+            return pd.DataFrame()
+        try:
+            return pd.read_json(predictions_payload, orient="split")
+        except ValueError:
+            return pd.read_json(predictions_payload)
+
+    def _csv_anomaly_details(scope_data, proposal, predictions_payload, df):
+        prediction_label_by_key = {}
+        driver_text_by_key = {}
+        if df.empty:
+            return prediction_label_by_key, driver_text_by_key
+
+        scope_matches = bool(proposal) and proposal.get("scope_sig") == _scope_sig(scope_data)
+        predictions_df = _load_predictions_frame(predictions_payload)
+        if not predictions_df.empty and "Anomaly" in predictions_df.columns:
+            prediction_frame = predictions_df.copy()
+            prediction_frame.index = prediction_frame.index.astype(str)
+            anomaly_series = (
+                pd.to_numeric(prediction_frame["Anomaly"], errors="coerce")
+                .fillna(0)
+                .astype(int)
+            )
+            prediction_label_by_key = {
+                str(run_key): ("Anomaly" if is_anomaly == 1 else "Normal")
+                for run_key, is_anomaly in anomaly_series.items()
+            }
+
+        if scope_matches:
+            proposal_rows = list(proposal.get("preview_rows") or []) + list(
+                proposal.get("already_flagged_rows") or []
+            )
+            for row in proposal_rows:
+                run_key = str(row.get("run_key") or "")
+                if not run_key:
+                    continue
+                contributors = []
+                for contributor in list(row.get("top_contributors") or [])[:3]:
+                    metric = contributor.get("metric")
+                    if not metric:
+                        continue
+                    contributors.append(_metric_display_label(metric))
+                if contributors:
+                    driver_text_by_key[run_key] = ", ".join(contributors)
+
+        return prediction_label_by_key, driver_text_by_key
+
     def _metric_option_label(metric_name):
         if metric_name in METRIC_LABELS:
             return METRIC_LABELS[metric_name]
@@ -915,10 +963,19 @@ def callbacks(app):
         Output("qc-download", "data"),
         Input("qc-download-btn", "n_clicks"),
         State("qc-scope-data", "data"),
+        State("anomaly-predictions", "data"),
+        State("anomaly-proposed-flags", "data"),
         State("project", "value"),
         State("pipeline", "value"),
     )
-    def download_qc_data(n_clicks, scope_data, project, pipeline):
+    def download_qc_data(
+        n_clicks,
+        scope_data,
+        predictions_payload,
+        anomaly_proposal,
+        project,
+        pipeline,
+    ):
         if not n_clicks:
             raise PreventUpdate
         if not scope_data:
@@ -927,6 +984,20 @@ def callbacks(app):
         df = pd.DataFrame(T.dashboard_rows(scope_data))
         if df.empty:
             raise PreventUpdate
+
+        key_series = (
+            df["RunKey"].astype(str)
+            if "RunKey" in df.columns
+            else df["RawFile"].astype(str)
+        )
+        prediction_label_by_key, driver_text_by_key = _csv_anomaly_details(
+            scope_data=scope_data,
+            proposal=anomaly_proposal,
+            predictions_payload=predictions_payload,
+            df=df,
+        )
+        df["Anomaly Prediction"] = key_series.map(prediction_label_by_key).fillna("")
+        df["Anomaly Drivers"] = key_series.map(driver_text_by_key).fillna("")
 
         # Use human-readable labels for columns where available
         rename = {}
