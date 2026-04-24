@@ -32,6 +32,10 @@ HIGHLIGHT_MARKER_COLOR = "#ef4444"
 HIGHLIGHT_MARKER_LINE_COLOR = "#7f1d1d"
 FLAGGED_MARKER_COLOR = "#f59e0b"
 FLAGGED_MARKER_LINE_COLOR = "#92400e"
+INTENSITY_TRANSFORM_NOTICE = (
+    "Reporter intensity profiles are shown as log2(1 + intensity) only; "
+    "no additional cohort-level normalization is applied in this view."
+)
 
 
 def _thin_ticks(tick_vals, tick_text, max_labels=15):
@@ -689,6 +693,24 @@ def callbacks(app):
             xaxis={"automargin": True},
             showlegend=False,
         )
+        if metric_is_intensity:
+            fig.update_layout(margin=dict(l=32, r=20, b=40, t=56, pad=0))
+            fig.add_annotation(
+                text=INTENSITY_TRANSFORM_NOTICE,
+                xref="paper",
+                yref="paper",
+                x=0,
+                y=1.12,
+                xanchor="left",
+                yanchor="top",
+                showarrow=False,
+                align="left",
+                font=dict(size=12, color="#475569"),
+                bgcolor="#f8fafc",
+                bordercolor="#cbd5e1",
+                borderwidth=1,
+                borderpad=6,
+            )
         fig.update_xaxes(
             title_text=X_AXIS_LABELS.get(x_axis, "Sample") if len(proteins) == 1 else "Proteins",
             showgrid=False,
