@@ -5,6 +5,7 @@ import shutil
 import numbers
 
 from omics.proteomics.maxquant.quality_control import (
+    _picked_group_fdr_cache_is_newer,
     maxquant_qc,
     maxquant_qc_csv,
     maxquant_qc_summary,
@@ -35,6 +36,18 @@ def _build_protein_groups(path, channels):
     for ch in range(1, channels + 1):
         row[f"Reporter intensity corrected {ch}"] = 0 if ch % 2 == 0 else 1000 + ch
     _write_tsv(path, "proteinGroups.txt", [row])
+
+
+def _build_pipeline_like_layout(base_path):
+    pipeline_root = base_path / "P1MQ1"
+    maxquant_dir = pipeline_root / "output" / "u1_rf1_sample" / "maxquant"
+    picked_group_dir = pipeline_root / "output" / "picked_group_fdr" / "20260424-120000"
+    (pipeline_root / "config").mkdir(parents=True, exist_ok=True)
+    (pipeline_root / "output").mkdir(parents=True, exist_ok=True)
+    (pipeline_root / "config" / "mqpar.xml").write_text("<MaxQuantParams/>", encoding="utf-8")
+    maxquant_dir.mkdir(parents=True, exist_ok=True)
+    picked_group_dir.mkdir(parents=True, exist_ok=True)
+    return pipeline_root, maxquant_dir, picked_group_dir
 
 
 class TestMaxquantQualityControl:
@@ -528,3 +541,262 @@ class TestMaxquantQualityControl:
         assert peptide_out["Peptide_msms_count_median"] == 5
         assert isinstance(protein_out["Protein_peptides_median"], numbers.Integral)
         assert isinstance(peptide_out["Peptide_length_median"], numbers.Integral)
+
+    def test__protein_groups_qc_is_unchanged_without_picked_group_fdr_run(self, tmp_path):
+        pipeline_root, maxquant_dir, _picked_group_dir = _build_pipeline_like_layout(tmp_path)
+        _write_tsv(
+            maxquant_dir,
+            "proteinGroups.txt",
+            [
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Majority protein IDs": "P1",
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 50.0,
+                    "Score": 10.0,
+                    "Q-value": 0.001,
+                    "Peptides": 2,
+                    "Unique peptides": 2,
+                    "Razor + unique peptides": 2,
+                    "MS/MS count": 4,
+                    "Unique sequence coverage [%]": 20.0,
+                    "Reporter intensity corrected 1": 10,
+                },
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Majority protein IDs": "P2",
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 40.0,
+                    "Score": 12.0,
+                    "Q-value": 0.002,
+                    "Peptides": 3,
+                    "Unique peptides": 3,
+                    "Razor + unique peptides": 3,
+                    "MS/MS count": 5,
+                    "Unique sequence coverage [%]": 30.0,
+                    "Reporter intensity corrected 1": 25,
+                },
+            ],
+        )
+        shutil.rmtree(pipeline_root / "output" / "picked_group_fdr")
+
+        out = maxquant_qc_protein_groups(maxquant_dir, protein=None)
+
+        assert out["N_protein_groups"] == 2
+        assert out["N_protein_true_hits"] == 2
+
+    def test__protein_groups_qc_uses_picked_group_fdr_whitelist(self, tmp_path):
+        _pipeline_root, maxquant_dir, picked_group_dir = _build_pipeline_like_layout(tmp_path)
+        _write_tsv(
+            maxquant_dir,
+            "proteinGroups.txt",
+            [
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Majority protein IDs": "sp|P02769|ALBU_BOVIN;QC3_BSA;CON__P02769",
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 50.0,
+                    "Score": 10.0,
+                    "Q-value": 0.001,
+                    "Peptides": 2,
+                    "Unique peptides": 2,
+                    "Razor + unique peptides": 2,
+                    "MS/MS count": 4,
+                    "Unique sequence coverage [%]": 20.0,
+                    "Reporter intensity corrected 1": 10,
+                },
+                {
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Majority protein IDs": "P2",
+                    "Only identified by site": None,
+                    "Sequence coverage [%]": 40.0,
+                    "Score": 12.0,
+                    "Q-value": 0.002,
+                    "Peptides": 3,
+                    "Unique peptides": 3,
+                    "Razor + unique peptides": 3,
+                    "MS/MS count": 5,
+                    "Unique sequence coverage [%]": 30.0,
+                    "Reporter intensity corrected 1": 25,
+                },
+            ],
+        )
+        _write_tsv(
+            picked_group_dir,
+            "proteinGroups.fdr1.txt",
+            [
+                {
+                    "Majority protein IDs": "sp|P02769|ALBU_BOVIN;QC3_BSA",
+                }
+            ],
+        )
+        (picked_group_dir / "manifest.json").write_text(
+            '{"status": "completed"}',
+            encoding="utf-8",
+        )
+
+        out = maxquant_qc_protein_groups(maxquant_dir, protein=None)
+
+        assert out["N_protein_groups"] == 1
+        assert out["N_protein_true_hits"] == 1
+        assert out["Protein_peptides_median"] == 2
+
+    def test__peptide_qc_uses_picked_group_fdr_mokapot_peptide_whitelist(self, tmp_path):
+        _pipeline_root, maxquant_dir, picked_group_dir = _build_pipeline_like_layout(tmp_path)
+        _write_tsv(
+            maxquant_dir,
+            "peptides.txt",
+            [
+                {
+                    "Sequence": "PEPTIDEA",
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Score": 100.0,
+                    "PEP": 0.001,
+                    "Length": 8,
+                    "MS/MS Count": 4,
+                    "Unique (Groups)": "yes",
+                    "Unique (Proteins)": "yes",
+                    "Missed cleavages": 0,
+                    "Last amino acid": "K",
+                },
+                {
+                    "Sequence": "PEPTIDEB",
+                    "Potential contaminant": None,
+                    "Reverse": None,
+                    "Score": 120.0,
+                    "PEP": 0.002,
+                    "Length": 9,
+                    "MS/MS Count": 5,
+                    "Unique (Groups)": "yes",
+                    "Unique (Proteins)": "yes",
+                    "Missed cleavages": 0,
+                    "Last amino acid": "R",
+                },
+            ],
+        )
+        _write_tsv(
+            picked_group_dir,
+            "andromeda.mokapot.peptides.txt",
+            [
+                {
+                    "Peptide": "-.PEPTIDEA.-",
+                    "Label": True,
+                    "mokapot PEP": 0.001,
+                    "Proteins": "P1",
+                },
+                {
+                    "Peptide": "-.PEPTIDEB.-",
+                    "Label": True,
+                    "mokapot PEP": 0.02,
+                    "Proteins": "P2",
+                },
+            ],
+        )
+        (picked_group_dir / "manifest.json").write_text(
+            '{"status": "completed"}',
+            encoding="utf-8",
+        )
+
+        out = maxquant_qc_peptides(maxquant_dir)
+
+        assert out["N_peptides"] == 1
+        assert out["Peptide_length_median"] == 8
+        assert out["Peptide_msms_count_median"] == 4
+
+    def test__summary_uses_picked_group_fdr_mokapot_peptide_whitelist(self, tmp_path):
+        _pipeline_root, maxquant_dir, picked_group_dir = _build_pipeline_like_layout(tmp_path)
+        _write_tsv(
+            maxquant_dir,
+            "summary.txt",
+            [
+                {
+                    "MS": 10,
+                    "MS/MS": 20,
+                    "MS3": 0,
+                    "MS/MS Submitted": 20,
+                    "MS/MS Identified": 18,
+                    "MS/MS Identified [%]": 90,
+                    "Peptide Sequences Identified": 99,
+                    "Av. Absolute Mass Deviation [mDa]": 1.0,
+                    "Mass Standard Deviation [mDa]": 2.0,
+                }
+            ],
+        )
+        _write_tsv(
+            maxquant_dir,
+            "peptides.txt",
+            [
+                {"Sequence": "PEPTIDEA"},
+                {"Sequence": "PEPTIDEB"},
+                {"Sequence": "PEPTIDEB"},
+            ],
+        )
+        _write_tsv(
+            picked_group_dir,
+            "andromeda.mokapot.peptides.txt",
+            [
+                {
+                    "Peptide": "-.PEPTIDEA.-",
+                    "Label": True,
+                    "mokapot PEP": 0.001,
+                    "Proteins": "P1",
+                },
+                {
+                    "Peptide": "-.PEPTIDEB.-",
+                    "Label": True,
+                    "mokapot PEP": 0.001,
+                    "Proteins": "CON__P2",
+                },
+            ],
+        )
+        (picked_group_dir / "manifest.json").write_text(
+            '{"status": "completed"}',
+            encoding="utf-8",
+        )
+
+        out = maxquant_qc_summary(maxquant_dir)
+
+        assert out["Peptide Sequences Identified"] == 1
+
+    def test__qc_cache_is_stale_when_picked_group_fdr_is_newer(self, tmp_path):
+        _pipeline_root, maxquant_dir, picked_group_dir = _build_pipeline_like_layout(tmp_path)
+        cache_path = maxquant_dir / "maxquant_quality_control.csv"
+        cache_path.write_text("N_protein_groups\n2\n", encoding="utf-8")
+        _write_tsv(
+            picked_group_dir,
+            "proteinGroups.fdr1.txt",
+            [{"Majority protein IDs": "P1"}],
+        )
+        (picked_group_dir / "manifest.json").write_text(
+            '{"status": "completed"}',
+            encoding="utf-8",
+        )
+
+        os.utime(cache_path, (1, 1))
+        os.utime(picked_group_dir / "proteinGroups.fdr1.txt", (2, 2))
+
+        assert _picked_group_fdr_cache_is_newer(maxquant_dir, cache_path) is True
+
+    def test__qc_cache_is_stale_when_picked_group_fdr_peptides_are_newer(self, tmp_path):
+        _pipeline_root, maxquant_dir, picked_group_dir = _build_pipeline_like_layout(tmp_path)
+        cache_path = maxquant_dir / "maxquant_quality_control.csv"
+        cache_path.write_text("N_peptides\n2\n", encoding="utf-8")
+        _write_tsv(
+            picked_group_dir,
+            "andromeda.mokapot.peptides.txt",
+            [{"Peptide": "-.PEPTIDEA.-", "mokapot PEP": 0.001}],
+        )
+        (picked_group_dir / "manifest.json").write_text(
+            '{"status": "completed"}',
+            encoding="utf-8",
+        )
+
+        os.utime(cache_path, (1, 1))
+        os.utime(picked_group_dir / "andromeda.mokapot.peptides.txt", (2, 2))
+
+        assert _picked_group_fdr_cache_is_newer(maxquant_dir, cache_path) is True

@@ -8,6 +8,9 @@ from django.test import TestCase
 import pandas as pd
 
 from maxquant.models import Pipeline, RawFile, Result
+from omics.proteomics.maxquant.picked_group_fdr import (
+    PICKED_GROUP_FDR_PER_RESULT_PROTEIN_GROUPS,
+)
 from project.models import Project
 from user.models import User
 
@@ -291,6 +294,49 @@ class ResultStatusTestCase(TestCase):
         self.assertEqual(mock_qc_delay.call_count, 1)
         self.assertTrue(mock_metrics_delay.call_args.kwargs["rerun"])
         self.assertTrue(mock_qc_delay.call_args.kwargs["rerun"])
+
+    def test_create_protein_quant_prefers_picked_group_fdr_per_result_file(self):
+        self._write_file(
+            self.result.output_dir_maxquant / "proteinGroups.txt",
+            "\t".join(
+                [
+                    "Majority protein IDs",
+                    "Fasta headers",
+                    "Score",
+                    "Intensity",
+                    "Reporter intensity corrected 1",
+                ]
+            )
+            + "\n"
+            + "\t".join(["P1", "header-1", "10", "1000", "10"])
+            + "\n",
+        )
+        self._write_file(
+            self.result.output_dir_maxquant / PICKED_GROUP_FDR_PER_RESULT_PROTEIN_GROUPS,
+            "\t".join(
+                [
+                    "Majority protein IDs",
+                    "Fasta headers",
+                    "Score",
+                    "Intensity",
+                    f"Reporter intensity corrected 1 {Path(self.raw_file.logical_name).stem}",
+                ]
+            )
+            + "\n"
+            + "\t".join(["P1", "header-1", "20", "2000", "22"])
+            + "\n",
+        )
+
+        actual = self.result.create_protein_quant()
+
+        self.assertEqual(actual, self.result.protein_quant_fn)
+        self.assertTrue(actual.is_file())
+        df = pd.read_parquet(actual)
+        self.assertEqual(df.loc[0, "Intensity"], 2000)
+        self.assertEqual(df.loc[0, "Score"], 20)
+        reporter_cols = [c for c in df.columns if c.startswith("Reporter intensity corrected 1 ")]
+        self.assertEqual(len(reporter_cols), 1)
+        self.assertEqual(df.loc[0, reporter_cols[0]], 22)
 
     def test_dashboard_qc_data_uses_cache_when_fresh(self):
         raw_df = pd.DataFrame(

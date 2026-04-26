@@ -2,6 +2,7 @@ import csv
 import hashlib
 import io
 import json
+from pathlib import Path as P
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -23,8 +24,14 @@ from dashboards.dashboards.dashboard.index import (
     refresh_qc_table,
     update_kpis,
 )
+from dashboards.dashboards.dashboard.protein_intensity import (
+    _merge_axis_metadata,
+    _normalize_run_name,
+)
 from dashboards.dashboards.dashboard.tools import (
     ANOMALY_SESSION_ID,
+    _normalize_selected_raw_name,
+    _read_protein_groups_text,
     _normalize_max_features,
     _iter_selected_results,
     dashboard_result_data,
@@ -38,6 +45,7 @@ from dashboards.dashboards.dashboard.tools import (
 )
 from api.views import get_qc_data as api_get_qc_scope_data
 from maxquant.models import Pipeline, RawFile
+from omics.proteomics.tools import normalize_display_raw_run_name
 from project.models import Project
 from user.models import User
 
@@ -63,6 +71,58 @@ class DashboardToolsTestCase(SimpleTestCase):
         self.assertEqual(dashboard_rows(payload), [{"RawFile": "a.raw"}])
         self.assertEqual(dashboard_scope_error(payload)["kind"], "parsing")
         self.assertEqual(dashboard_result_data({"data": {"A": [1]}}, {}), {"A": [1]})
+
+    def test__shared_raw_name_normalization_is_consistent(self):
+        self.assertEqual(_normalize_selected_raw_name("SampleA.raw"), "samplea")
+        self.assertIsNone(_normalize_selected_raw_name("  None  "))
+        self.assertEqual(
+            normalize_display_raw_run_name(
+                "1234567890abcdef1234567890abcdef_SampleA.raw"
+            ),
+            "samplea",
+        )
+
+    def test__protein_intensity_axis_metadata_prefers_exact_raw_file_matches(self):
+        axis_df = pd.DataFrame(
+            [
+                {"RawFile": "Sample_A.raw", "Index": 1, "DateAcquired": pd.NaT, "run_key": "upper", "Flagged": False},
+                {"RawFile": "Sample_a.raw", "Index": 2, "DateAcquired": pd.NaT, "run_key": "lower", "Flagged": True},
+            ]
+        )
+        axis_df["RawFileLabel"] = axis_df["RawFile"]
+        axis_df["RawFileJoin"] = axis_df["RawFile"].map(_normalize_run_name)
+        long_df = pd.DataFrame(
+            [
+                {"RawFile": "Sample_A.raw", "RawFileJoin": "sample_a", "MetricValue": 10},
+                {"RawFile": "Sample_a.raw", "RawFileJoin": "sample_a", "MetricValue": 20},
+            ]
+        )
+
+        merged = _merge_axis_metadata(long_df, axis_df)
+
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(merged["Index"].tolist(), [1, 2])
+        self.assertEqual(merged["RawFileLabel"].tolist(), ["Sample_A.raw", "Sample_a.raw"])
+        self.assertEqual(merged["run_key"].tolist(), ["upper", "lower"])
+
+    def test__protein_intensity_axis_metadata_normalized_fallback_is_many_to_one(self):
+        axis_df = pd.DataFrame(
+            [
+                {"RawFile": "Sample_A.raw", "Index": 1, "DateAcquired": pd.NaT, "run_key": "upper", "Flagged": False},
+                {"RawFile": "Sample_a.raw", "Index": 2, "DateAcquired": pd.NaT, "run_key": "lower", "Flagged": True},
+            ]
+        )
+        axis_df["RawFileLabel"] = axis_df["RawFile"]
+        axis_df["RawFileJoin"] = axis_df["RawFile"].map(_normalize_run_name)
+        long_df = pd.DataFrame(
+            [{"RawFile": "sample_a", "RawFileJoin": "sample_a", "MetricValue": 10}]
+        )
+
+        merged = _merge_axis_metadata(long_df, axis_df)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged["Index"].tolist(), [1])
+        self.assertEqual(merged["RawFileLabel"].tolist(), ["Sample_A.raw"])
 
     @patch("dashboards.dashboards.dashboard.tools.api_get_qc_data")
     def test__get_qc_data_returns_structured_error_for_permission_failures(self, mock_get_qc):
@@ -160,6 +220,32 @@ class DashboardToolsTestCase(SimpleTestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["data"]["Majority protein IDs"]["0"], "P1")
+
+    @patch("dashboards.dashboards.dashboard.tools.filter_protein_groups_with_picked_group_fdr")
+    def test__read_protein_groups_text_applies_picked_group_fdr_filter(self, mock_filter):
+        class _RawFile:
+            logical_name = "demo_01.raw"
+            use_downstream = True
+            flagged = False
+            pipeline = type("Pipeline", (), {"project": type("Project", (), {"name": "Demo"})(), "name": "Pipe"})()
+
+        class _Result:
+            pk = 1
+            raw_file = _RawFile()
+            output_dir_maxquant = P("/tmp/demo-maxquant")
+
+        sample = pd.DataFrame([{"Majority protein IDs": "P1", "Score": 10.0}])
+        mock_filter.return_value = sample.copy()
+
+        with patch("dashboards.dashboards.dashboard.tools._detect_separator", return_value="\t"), patch(
+            "dashboards.dashboards.dashboard.tools.pd.read_csv",
+            return_value=sample.copy(),
+        ), patch("pathlib.Path.is_file", return_value=True):
+            df = _read_protein_groups_text(_Result())
+
+        mock_filter.assert_called_once()
+        self.assertEqual(df["Majority protein IDs"].tolist(), ["P1"])
+        self.assertEqual(df["RawFile"].tolist(), ["demo_01"])
 
     @patch("dashboards.dashboards.dashboard.tools._results_for_user")
     @patch("dashboards.dashboards.dashboard.tools._pipelines_for_user")
