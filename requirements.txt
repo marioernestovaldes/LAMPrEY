@@ -36,6 +36,8 @@ pycaret>=3.0.0,<3.4.0
 psycopg2-binary
 panel
 polars
+picked_group_fdr==0.4.0
+mokapot==0.8.3
 pytest-django
 pytest-celery
 waitress

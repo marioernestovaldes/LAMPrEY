@@ -15,6 +15,8 @@ The QC layer currently captures metrics such as:
 - precursor and calibration metrics from `msmsScans.txt` and `evidence.txt`
 - QC peptide and QC protein reporter-intensity summaries when the expected targets are present
 
+LAMPrEY can also apply picked-group FDR correction to completed MaxQuant runs in a pipeline. This is started manually from the pipeline page in the Django admin panel, and successful runs produce corrected protein-group outputs for downstream QC and protein-group review. For the operator workflow, see [How to run picked-group FDR correction](how-to-run-picked-group-fdr.md).
+
 To generate an input parameter file for LAMPrEY, create the configuration in a local MaxQuant installation with a single representative RAW file, then export the resulting `mqpar.xml` and upload it to the server as part of a pipeline setup.
 
 Runtime selection is version-aware:

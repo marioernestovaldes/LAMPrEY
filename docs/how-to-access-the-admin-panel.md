@@ -31,5 +31,6 @@ Use it when you need to:
 - [prepare `mqpar.xml`](how-to-prepare-mqpar.md)
 - [create a pipeline](how-to-add-a-pipeline.md)
 - [submit RAW files](how-to-submit-raw-files.md) after a pipeline has been configured
+- Protein group FDR correction [picked-group FDR correction](how-to-run-picked-group-fdr.md)
 
 This matches the architecture where administrative configuration feeds the operational views in **Main** and the analytical views in **Dashboard**.

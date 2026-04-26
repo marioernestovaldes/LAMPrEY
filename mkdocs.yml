@@ -14,6 +14,7 @@ nav:
             - Prepare mqpar.xml: how-to-prepare-mqpar.md
             - Create a pipeline: how-to-add-a-pipeline.md
             - Submit RAW files: how-to-submit-raw-files.md
+            - Run picked-group FDR: how-to-run-picked-group-fdr.md
         - Main: main.md
         - Dashboard: dashboard.md
     - System:
