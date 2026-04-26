@@ -3,7 +3,6 @@ import json
 import pandas as pd
 import numpy as np
 import logging
-import re
 from time import perf_counter
 
 import dask.dataframe as dd
@@ -33,6 +32,10 @@ from maxquant.models import Pipeline, Result, RawFile as RawFileModel
 from maxquant.dashboard_cache import (
     pipeline_dashboard_qc_data,
     sort_dashboard_qc_scope,
+)
+from omics.proteomics.tools import (
+    normalize_display_raw_run_name,
+    normalize_raw_run_name,
 )
 from maxquant.serializers import PipelineSerializer, RawFileSerializer
 from project.models import Project
@@ -412,15 +415,7 @@ def _request_list(data, key):
 
 
 def _normalize_selected_raw_name(value):
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    lowered = text.lower()
-    if lowered in {"none", "nan"}:
-        return None
-    return P(text).stem.lower()
+    return normalize_raw_run_name(value)
 
 
 def _parse_selected_raw_file_ids(values):
@@ -479,17 +474,6 @@ def get_protein_quant_fn(
     only_use_downstream=False,
     raw_files=None,
 ):
-    def _normalize_raw_name(value):
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text:
-            return None
-        lowered = text.lower()
-        if lowered in {"none", "nan"}:
-            return None
-        return P(text).stem.lower()
-
     pipeline = _pipelines_for_user(user).filter(
         project__slug=project_slug, slug=pipeline_slug
     ).first()
@@ -500,14 +484,14 @@ def get_protein_quant_fn(
     if raw_files is not None:
         requested_raws = {
             normalized
-            for normalized in (_normalize_raw_name(raw) for raw in raw_files)
+            for normalized in (normalize_raw_run_name(raw) for raw in raw_files)
             if normalized
         }
         if requested_raws:
             results = [
                 res
                 for res in results
-                if _normalize_raw_name(res.raw_file.logical_name) in requested_raws
+                if normalize_raw_run_name(res.raw_file.logical_name) in requested_raws
             ]
         else:
             results = []
@@ -545,17 +529,27 @@ def get_protein_groups_data(
     protein_names,
     protein_col="Majority protein IDs",
 ):
-    def _normalize_display_rawfile(value):
-        if value is None:
-            return None
-        stem = P(str(value)).stem
-        return re.sub(r"^[0-9a-f]{32}_", "", stem, flags=re.IGNORECASE)
+    requested_columns = ["RawFile", protein_col] + list(columns or [])
+    frames = []
+    for fn in fns:
+        df = pd.read_parquet(fn)
+        if protein_col not in df.columns or "RawFile" not in df.columns:
+            continue
+        df = df[df[protein_col].isin(protein_names)].copy()
+        if df.empty:
+            continue
+        available = [col for col in requested_columns if col in df.columns]
+        df = df[available]
+        missing = [col for col in requested_columns if col not in df.columns]
+        for col in missing:
+            df[col] = np.nan
+        frames.append(df[requested_columns])
 
-    ddf = dd.read_parquet(fns, engine="pyarrow")
-    ddf = ddf[ddf[protein_col].isin(protein_names)]
-    ddf = ddf[["RawFile", protein_col] + columns]
-    df = ddf.compute().reset_index(drop=True)
-    df["RawFile"] = df["RawFile"].apply(_normalize_display_rawfile)
+    if not frames:
+        return pd.DataFrame(columns=requested_columns)
+
+    df = pd.concat(frames, ignore_index=True, sort=False).reset_index(drop=True)
+    df["RawFile"] = df["RawFile"].apply(normalize_display_raw_run_name)
     return df
 
 def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
@@ -568,17 +562,6 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
             frame = frame.sort_values("Index", na_position="last").reset_index(drop=True)
             frame["Index"] = np.arange(1, len(frame) + 1, dtype=int)
         return frame
-
-    def _normalize_rawfile_name(value):
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text:
-            return None
-        lowered = text.lower()
-        if lowered in {"none", "nan"}:
-            return None
-        return P(text).stem.lower()
 
     pipeline = _pipelines_for_user(user).filter(
         project__slug=project_slug, slug=pipeline_slug
@@ -697,7 +680,7 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
     if metadata is not None and not metadata.empty and "RawFile" in df.columns:
         metadata_with_raw = metadata.copy()
         metadata_with_raw["_raw_name_norm"] = metadata_with_raw["RawFile"].map(
-            _normalize_rawfile_name
+            normalize_raw_run_name
         )
         metadata_with_raw = metadata_with_raw.dropna(subset=["_raw_name_norm"])
         metadata_with_raw = metadata_with_raw.drop_duplicates(
@@ -705,7 +688,7 @@ def get_qc_data(project_slug, pipeline_slug, data_range=None, user=None):
         )
         if not metadata_with_raw.empty:
             uploader_by_raw = metadata_with_raw.set_index("_raw_name_norm")["Uploader"]
-            mapped_by_raw = df["RawFile"].map(_normalize_rawfile_name).map(uploader_by_raw)
+            mapped_by_raw = df["RawFile"].map(normalize_raw_run_name).map(uploader_by_raw)
             if "Uploader" not in df.columns:
                 df["Uploader"] = mapped_by_raw
             else:

@@ -1,8 +1,29 @@
 import os
 import logging
+import re
+from pathlib import Path
 
 from .rawtools.quality_control import collect_rawtools_qc_data
 from .maxquant.quality_control import collect_maxquant_qc_data
+
+
+def normalize_raw_run_name(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered in {"none", "nan"}:
+        return None
+    return Path(text).stem.lower()
+
+
+def normalize_display_raw_run_name(value):
+    normalized = normalize_raw_run_name(value)
+    if not normalized:
+        return normalized
+    return re.sub(r"^[0-9a-f]{32}_", "", normalized, flags=re.IGNORECASE)
 
 
 def load_rawtools_data_from(path="/var/www/html/proteomics/files/raw"):

@@ -3,11 +3,20 @@ import logging
 import signal
 import subprocess
 import time
+import json
 from contextlib import ExitStack
 from celery import shared_task
 from django.apps import apps
+from django.utils import timezone
 
 from omics.proteomics.maxquant import MaxquantRunner
+from omics.proteomics.maxquant.picked_group_fdr import (
+    collect_pipeline_evidence_inputs,
+    format_picked_group_fdr_failure,
+    run_picked_group_fdr,
+    validate_pipeline_for_picked_group_fdr,
+    write_per_result_picked_group_fdr_quant_files,
+)
 
 from omics.proteomics.rawtools.quality_control import (
     rawtools_metrics_cmd,
@@ -32,6 +41,13 @@ def _warm_dashboard_caches(result_id):
     if result is None:
         return
     warm_dashboard_caches_for_result(result)
+
+
+def _update_pipeline_picked_group_fdr_state(pipeline_id, **updates):
+    if not pipeline_id:
+        return
+    Pipeline = apps.get_model("maxquant", "Pipeline")
+    Pipeline.objects.filter(pk=pipeline_id).update(**updates)
 
 
 def _safe_float(env_name, default):
@@ -395,3 +411,163 @@ def run_maxquant(self, raw_file, params, rerun=False, result_id=None):
     )
     if rc == 0:
         _warm_dashboard_caches(result_id)
+
+
+@shared_task(bind=True, max_retries=None)
+def run_pipeline_picked_group_fdr(self, pipeline_id, selected_result_ids=None, run_dir=None):
+    _defer_if_busy(
+        task=self,
+        kind="run_pipeline_picked_group_fdr",
+        min_free_mem_gb=_safe_float("MIN_FREE_MEM_GB_MAXQUANT", 8),
+        max_load_per_cpu=_safe_float("MAX_LOAD_PER_CPU_MAXQUANT", 0.85),
+    )
+    Pipeline = apps.get_model("maxquant", "Pipeline")
+    pipeline = Pipeline.objects.filter(pk=pipeline_id).select_related("project").first()
+    if pipeline is None:
+        logging.warning("[picked_group_fdr] Pipeline %s not found", pipeline_id)
+        return
+
+    _update_pipeline_picked_group_fdr_state(
+        pipeline_id,
+        picked_group_fdr_last_status="running",
+        picked_group_fdr_last_started_at=timezone.now(),
+        picked_group_fdr_last_finished_at=None,
+        picked_group_fdr_last_error="",
+    )
+    logging.info(
+        "[picked_group_fdr] task started pipeline_id=%s task_id=%s requested_results=%s run_dir=%s",
+        pipeline_id,
+        self.request.id,
+        list(selected_result_ids or []),
+        run_dir or "<auto>",
+    )
+
+    try:
+        validation = validate_pipeline_for_picked_group_fdr(
+            pipeline,
+            result_ids=selected_result_ids,
+        )
+        if validation.get("status") != "ok":
+            raise RuntimeError(validation.get("message") or "Pipeline validation failed.")
+
+        collection = collect_pipeline_evidence_inputs(pipeline, result_ids=selected_result_ids)
+        included_results = collection["included_results"]
+        evidence_paths = [item["evidence_path"] for item in included_results]
+        run_dir_path = pipeline.picked_group_fdr_root / (
+            run_dir or timezone.now().strftime("%Y%m%d-%H%M%S")
+        )
+        run_dir_path.mkdir(parents=True, exist_ok=True)
+        logging.info(
+            "[picked_group_fdr] task inputs pipeline_id=%s included=%s excluded=%s output_dir=%s",
+            pipeline_id,
+            len(included_results),
+            len(collection["excluded_results"]),
+            run_dir_path,
+        )
+
+        manifest = {
+            "status": "running",
+            "pipeline_id": pipeline.pk,
+            "pipeline_name": pipeline.name,
+            "project": str(pipeline.project),
+            "queued_task_id": self.request.id,
+            "fasta_path": validation["fasta_path"],
+            "mqpar_path": validation["mqpar_path"],
+            "mqpar_settings": validation["mqpar_settings"],
+            "included_results": included_results,
+            "excluded_results": collection["excluded_results"],
+            "requested_result_ids": list(selected_result_ids or []),
+            "run_dir": str(run_dir_path),
+        }
+        (run_dir_path / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+        result = run_picked_group_fdr(
+            pipeline_identifier=f"{pipeline.project.slug}/{pipeline.slug}",
+            selected_run_set=included_results,
+            fasta_path=validation["fasta_path"],
+            mqpar_path=validation["mqpar_path"],
+            evidence_paths=evidence_paths,
+            output_dir=run_dir_path,
+        )
+
+        manifest["artifacts"] = result.get("artifacts", {})
+        manifest["log_excerpt"] = result.get("log_excerpt", {})
+        manifest["status"] = "completed"
+        per_result_quant = write_per_result_picked_group_fdr_quant_files(
+            included_results,
+            manifest["artifacts"]["protein_groups_filtered"],
+        )
+        manifest["artifacts"]["per_result_protein_groups"] = per_result_quant["written"]
+        manifest["per_result_protein_groups_skipped"] = per_result_quant["skipped"]
+        (run_dir_path / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        _update_pipeline_picked_group_fdr_state(
+            pipeline_id,
+            picked_group_fdr_last_status="completed",
+            picked_group_fdr_last_finished_at=timezone.now(),
+            picked_group_fdr_last_error="",
+            picked_group_fdr_last_manifest=json.dumps(manifest, sort_keys=True),
+            picked_group_fdr_last_run_dir=run_dir_path.name,
+        )
+        logging.info(
+            "[picked_group_fdr] task completed pipeline_id=%s task_id=%s output_dir=%s artifacts=%s per_result_written=%s per_result_skipped=%s",
+            pipeline_id,
+            self.request.id,
+            run_dir_path,
+            sorted(manifest.get("artifacts", {}).keys()),
+            len(per_result_quant["written"]),
+            len(per_result_quant["skipped"]),
+        )
+        excerpt = manifest.get("log_excerpt", {}).get("stdout", [])
+        if excerpt:
+            logging.info("[picked_group_fdr] Pipeline %s summary:", pipeline_id)
+            for line in excerpt:
+                logging.info("[picked_group_fdr] %s", line)
+    except Exception as exc:
+        logging.exception("[picked_group_fdr] Pipeline %s failed: %s", pipeline_id, exc)
+        run_dir_name = run_dir or timezone.now().strftime("%Y%m%d-%H%M%S")
+        run_dir_path = pipeline.picked_group_fdr_root / run_dir_name
+        run_dir_path.mkdir(parents=True, exist_ok=True)
+        error_path = run_dir_path / "picked_group_fdr.err"
+        error_summary = (
+            str(exc)
+            if "Picked-group-FDR correction was not successful" in str(exc)
+            else format_picked_group_fdr_failure(exc)
+        )
+        if error_path.exists():
+            existing_error = error_path.read_text(encoding="utf-8", errors="ignore")
+            if error_summary not in existing_error:
+                with error_path.open("a", encoding="utf-8") as handle:
+                    if existing_error and not existing_error.endswith("\n"):
+                        handle.write("\n")
+                    handle.write(f"\n{error_summary}\n")
+        else:
+            error_path.write_text(error_summary, encoding="utf-8")
+        manifest_path = run_dir_path / "manifest.json"
+        manifest = {}
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                manifest = {}
+        manifest["status"] = "failed"
+        manifest["error_summary"] = error_summary
+        manifest["raw_error"] = str(exc)
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        _update_pipeline_picked_group_fdr_state(
+            pipeline_id,
+            picked_group_fdr_last_status="failed",
+            picked_group_fdr_last_finished_at=timezone.now(),
+            picked_group_fdr_last_error=error_summary,
+            picked_group_fdr_last_manifest=json.dumps(manifest, sort_keys=True),
+            picked_group_fdr_last_run_dir=run_dir_path.name,
+        )
+        raise

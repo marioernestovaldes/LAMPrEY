@@ -1,7 +1,16 @@
+import html
+import json
+import logging
+from pathlib import Path
+
 from django import forms
 from django.contrib import admin, messages
 from django.conf import settings
-from pathlib import Path
+from django.http import HttpResponseRedirect
+from django.urls import path, reverse
+from django.utils import timezone
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .models import (
     Pipeline,
@@ -9,6 +18,13 @@ from .models import (
     Result,
 )
 from .defaults import ensure_bundled_maxquant_installed
+from .tasks import run_pipeline_picked_group_fdr
+from omics.proteomics.maxquant.picked_group_fdr import (
+    PICKED_GROUP_FDR_PER_RESULT_PROTEIN_GROUPS,
+    validate_pipeline_for_picked_group_fdr,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _read_upload_head(upload, size=4096):
@@ -122,6 +138,13 @@ def _pipeline_file_warnings(pipeline):
         warnings.append(fasta_warning)
 
     return warnings
+
+
+def _comma_joined(items, fallback="-"):
+    cleaned = [str(item) for item in items if str(item).strip()]
+    if not cleaned:
+        return fallback
+    return ", ".join(cleaned)
 
 
 class PipelineAdminForm(forms.ModelForm):
@@ -261,28 +284,10 @@ class PipelineAdmin(admin.ModelAdmin):
 
     list_filter = ()
 
-    list_display = ("name", "project", "created", "created_by")
+    list_display = ("name", "project", "picked_group_fdr_admin_status", "created", "created_by")
     search_fields = ("name", "project__name", "created_by__email", "description")
 
     sortable_by = ("name", "created", "pipeline")
-
-    fieldsets = (
-        (None, {"fields": ("project", "name", "created", "created_by", "description")}),
-        (
-            "MaxQuant",
-            {
-                "fields": (
-                    "maxquant_executable",
-                    "mqpar_file",
-                    "download_mqpar",
-                    "fasta_file",
-                    "download_fasta",
-                )
-            },
-        ),
-        ("RawTools", {"fields": ("rawtools_args",)}),
-        ("Info", {"fields": ("slug", "uuid", "path", "fasta_path", "mqpar_path")}),
-    )
 
     def _default_pipeline_name(self):
         index = 1
@@ -351,10 +356,7 @@ class PipelineAdmin(admin.ModelAdmin):
         return formfield
 
     def get_fieldsets(self, request, obj=None):
-        if obj is not None:
-            return super().get_fieldsets(request, obj)
-
-        return (
+        base = (
             (None, {"fields": ("project", "name", "created", "created_by", "description")}),
             (
                 "MaxQuant",
@@ -368,6 +370,25 @@ class PipelineAdmin(admin.ModelAdmin):
             ),
             ("RawTools", {"fields": ("rawtools_args",)}),
             ("Info", {"fields": ("slug", "uuid", "path", "fasta_path", "mqpar_path")}),
+        )
+        if obj is None:
+            return base
+        return base + (
+            (
+                "Picked Group FDR",
+                {
+                    "fields": (
+                        "picked_group_fdr_help_display",
+                        "picked_group_fdr_run_action",
+                        "picked_group_fdr_clear_action",
+                        "picked_group_fdr_validation_summary",
+                        "picked_group_fdr_status_summary",
+                        "picked_group_fdr_last_output_dir_display",
+                        "picked_group_fdr_last_manifest_display",
+                        "picked_group_fdr_last_error_display",
+                    )
+                },
+            ),
         )
 
     def get_readonly_fields(self, request, obj=None):
@@ -383,6 +404,14 @@ class PipelineAdmin(admin.ModelAdmin):
                 "download_fasta",
                 "download_mqpar",
                 "project",
+                "picked_group_fdr_help_display",
+                "picked_group_fdr_run_action",
+                "picked_group_fdr_clear_action",
+                "picked_group_fdr_validation_summary",
+                "picked_group_fdr_status_summary",
+                "picked_group_fdr_last_output_dir_display",
+                "picked_group_fdr_last_manifest_display",
+                "picked_group_fdr_last_error_display",
             )
         else:
             return (
@@ -395,6 +424,14 @@ class PipelineAdmin(admin.ModelAdmin):
                 "mqpar_path",
                 "download_fasta",
                 "download_mqpar",
+                "picked_group_fdr_help_display",
+                "picked_group_fdr_run_action",
+                "picked_group_fdr_clear_action",
+                "picked_group_fdr_validation_summary",
+                "picked_group_fdr_status_summary",
+                "picked_group_fdr_last_output_dir_display",
+                "picked_group_fdr_last_manifest_display",
+                "picked_group_fdr_last_error_display",
             )
 
     class Media:
@@ -415,6 +452,342 @@ class PipelineAdmin(admin.ModelAdmin):
                     self.message_user(request, warning, level=messages.WARNING)
 
         return response
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "<path:object_id>/run-picked-group-fdr/",
+                self.admin_site.admin_view(self.run_picked_group_fdr_view),
+                name="maxquant_pipeline_run_picked_group_fdr",
+            ),
+            path(
+                "<path:object_id>/clear-picked-group-fdr/",
+                self.admin_site.admin_view(self.clear_picked_group_fdr_view),
+                name="maxquant_pipeline_clear_picked_group_fdr",
+            ),
+        ]
+        return custom_urls + urls
+
+    def picked_group_fdr_run_action(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        if obj.picked_group_fdr_is_active:
+            return "Picked-group-FDR is currently queued or running."
+        url = reverse(
+            "admin:maxquant_pipeline_run_picked_group_fdr",
+            args=[obj.pk],
+        )
+        return format_html(
+            '<a class="button" href="{}">Run picked-group FDR</a>',
+            url,
+        )
+
+    picked_group_fdr_run_action.short_description = "Run Picked Group FDR"
+
+    def picked_group_fdr_clear_action(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        if obj.picked_group_fdr_is_active:
+            return "Picked-group-FDR status cannot be cleared while queued or running."
+        if (
+            obj.picked_group_fdr_last_status == "never_run"
+            and not obj.picked_group_fdr_last_manifest
+            and not obj.picked_group_fdr_last_run_dir
+        ):
+            return "-"
+        url = reverse(
+            "admin:maxquant_pipeline_clear_picked_group_fdr",
+            args=[obj.pk],
+        )
+        return format_html(
+            '<a class="button" href="{}">Clear picked-group FDR status</a>',
+            url,
+        )
+
+    picked_group_fdr_clear_action.short_description = "Clear Picked Group FDR Status"
+
+    def picked_group_fdr_help_display(self, obj):
+        return format_html(
+            """
+            <div style="max-width: 72em;">
+                <p><strong>Purpose:</strong> Picked-group-FDR performs a pipeline-level protein-group
+                false discovery rate correction across the eligible MaxQuant runs in this pipeline.
+                It uses the pipeline FASTA file, the pipeline <code>mqpar.xml</code>, and the
+                <code>evidence.txt</code> file from each completed run.</p>
+                <p><strong>When to use it:</strong> run this after MaxQuant has completed for the
+                runs you want to compare together. The current integration is intended for
+                cross-run protein-group validation and result review, not for single-run QC.</p>
+                <p><strong>Current behavior:</strong> the correction is admin-only, writes results
+                side-by-side under the pipeline output directory, and does not replace the default
+                MaxQuant outputs used elsewhere in the application.</p>
+                <p><strong>Requirements:</strong> eligible runs must have readable
+                <code>evidence.txt</code> files, the pipeline must have a readable FASTA and
+                <code>mqpar.xml</code>, the MaxQuant configuration must use
+                <code>proteinFdr = 1</code> and <code>peptideFdr = 1</code>, and Mokapot
+                rescoring must finish successfully.</p>
+                <p><strong>Status guide:</strong> <code>completed</code> means the corrected
+                protein-group output files were written. <code>failed</code> means the correction
+                stopped before completion; use the saved error summary and
+                <code>picked_group_fdr.err</code> in the last output directory for the technical
+                details.</p>
+            </div>
+            """
+        )
+
+    picked_group_fdr_help_display.short_description = "Help"
+
+    def picked_group_fdr_validation_summary(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        validation = validate_pipeline_for_picked_group_fdr(obj)
+        if validation.get("status") == "ok":
+            return validation.get("message")
+        return validation.get("message", "Pipeline is not eligible for picked-group-FDR.")
+
+    picked_group_fdr_validation_summary.short_description = "Eligibility"
+
+    def picked_group_fdr_status_summary(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        submitted = obj.picked_group_fdr_task_submitted_at
+        finished = obj.picked_group_fdr_last_finished_at
+        parts = [f"Status: {obj.picked_group_fdr_last_status}"]
+        if submitted:
+            parts.append(f"Queued: {submitted}")
+        if finished:
+            parts.append(f"Finished: {finished}")
+        return " | ".join(parts)
+
+    picked_group_fdr_status_summary.short_description = "Last Run Status"
+
+    def picked_group_fdr_admin_status(self, obj):
+        return obj.picked_group_fdr_last_status
+
+    picked_group_fdr_admin_status.short_description = "Picked Group FDR"
+
+    def picked_group_fdr_last_output_dir_display(self, obj):
+        if not obj or not obj.picked_group_fdr_last_run_path:
+            return "-"
+        return str(obj.picked_group_fdr_last_run_path)
+
+    picked_group_fdr_last_output_dir_display.short_description = "Last Output Directory"
+
+    def picked_group_fdr_last_manifest_display(self, obj):
+        manifest = obj.picked_group_fdr_manifest_data if obj else {}
+        if not manifest:
+            return "-"
+        included_results = manifest.get("included_results", [])
+        excluded_results = manifest.get("excluded_results", [])
+        mqpar_settings = manifest.get("mqpar_settings", {})
+        artifacts = manifest.get("artifacts", {})
+        log_excerpt = manifest.get("log_excerpt", {})
+
+        included_names = [
+            row.get("raw_file") or f"Result {row.get('result_id')}" for row in included_results
+        ]
+        excluded_summaries = []
+        for row in excluded_results[:10]:
+            raw_file = row.get("raw_file") or f"Result {row.get('result_id')}"
+            reason = row.get("reason") or "Excluded"
+            excluded_summaries.append(f"{raw_file}: {reason}")
+        if len(excluded_results) > 10:
+            excluded_summaries.append(
+                f"... and {len(excluded_results) - 10} more excluded run(s)"
+            )
+
+        output_files = []
+        if artifacts.get("protein_groups_filtered"):
+            output_files.append("proteinGroups.fdr1.txt")
+        if artifacts.get("protein_groups"):
+            output_files.append("proteinGroups.txt")
+        if artifacts.get("stdout"):
+            output_files.append("picked_group_fdr.out")
+        if artifacts.get("stderr"):
+            output_files.append("picked_group_fdr.err")
+        if artifacts.get("per_result_protein_groups"):
+            output_files.append(PICKED_GROUP_FDR_PER_RESULT_PROTEIN_GROUPS)
+
+        stdout_excerpt = log_excerpt.get("stdout", [])
+        stderr_excerpt = log_excerpt.get("stderr", [])
+        log_html = ""
+        if stdout_excerpt or stderr_excerpt:
+            excerpt_blocks = []
+            if stdout_excerpt:
+                excerpt_blocks.append(
+                    f"<p><strong>Stdout excerpt:</strong></p><pre>{html.escape(chr(10).join(stdout_excerpt))}</pre>"
+                )
+            if stderr_excerpt:
+                excerpt_blocks.append(
+                    f"<p><strong>Stderr excerpt:</strong></p><pre>{html.escape(chr(10).join(stderr_excerpt))}</pre>"
+                )
+            log_html = "".join(excerpt_blocks)
+
+        return format_html(
+            """
+            <div style="max-width: 72em;">
+                <p><strong>Included runs:</strong> {} ({})</p>
+                <p><strong>Excluded runs:</strong> {}</p>
+                <p><strong>Key settings:</strong> proteinFdr={}, peptideFdr={}, enzyme={}</p>
+                <p><strong>Artifacts:</strong> {}</p>
+                {}
+            </div>
+            """,
+            len(included_results),
+            _comma_joined(included_names),
+            _comma_joined(excluded_summaries, fallback="None"),
+            mqpar_settings.get("protein_fdr", "-"),
+            mqpar_settings.get("peptide_fdr", "-"),
+            mqpar_settings.get("enzyme_name", "-"),
+            _comma_joined(output_files, fallback="Not available yet"),
+            mark_safe(log_html),
+        )
+
+    picked_group_fdr_last_manifest_display.short_description = "Run Summary"
+
+    def picked_group_fdr_last_error_display(self, obj):
+        if not obj or not obj.picked_group_fdr_last_error:
+            return "-"
+        return format_html("<pre>{}</pre>", obj.picked_group_fdr_last_error)
+
+    picked_group_fdr_last_error_display.short_description = "Last Error"
+
+    def run_picked_group_fdr_view(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Pipeline not found.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:maxquant_pipeline_changelist"))
+        if obj.picked_group_fdr_is_active:
+            self.message_user(
+                request,
+                "Picked-group-FDR is already queued or running for this pipeline.",
+                level=messages.WARNING,
+            )
+            return HttpResponseRedirect(reverse("admin:maxquant_pipeline_change", args=[obj.pk]))
+
+        validation = validate_pipeline_for_picked_group_fdr(obj)
+        if validation.get("status") != "ok":
+            logger.warning(
+                "[picked_group_fdr] admin queue rejected pipeline_id=%s reason=%s",
+                obj.pk,
+                validation.get("message"),
+            )
+            self.message_user(
+                request,
+                validation.get("message", "Pipeline is not eligible for picked-group-FDR."),
+                level=messages.ERROR,
+            )
+            return HttpResponseRedirect(reverse("admin:maxquant_pipeline_change", args=[obj.pk]))
+
+        run_dir = timezone.now().strftime("%Y%m%d-%H%M%S")
+        manifest = {
+            "pipeline_id": obj.pk,
+            "pipeline_name": obj.name,
+            "project": str(obj.project),
+            "requested_at": timezone.now().isoformat(),
+            "fasta_path": validation["fasta_path"],
+            "mqpar_path": validation["mqpar_path"],
+            "mqpar_settings": validation["mqpar_settings"],
+            "included_results": validation["included_results"],
+            "excluded_results": validation["excluded_results"],
+            "run_dir": str(obj.picked_group_fdr_root / run_dir),
+        }
+        logger.info(
+            "[picked_group_fdr] admin queue requested pipeline_id=%s run_dir=%s included=%s excluded=%s user=%s",
+            obj.pk,
+            run_dir,
+            len(validation["included_results"]),
+            len(validation["excluded_results"]),
+            getattr(request.user, "pk", None),
+        )
+        async_result = run_pipeline_picked_group_fdr.delay(
+            obj.pk,
+            [item["result_id"] for item in validation["included_results"]],
+            run_dir=run_dir,
+        )
+        obj.picked_group_fdr_task_id = async_result.id
+        obj.picked_group_fdr_task_submitted_at = timezone.now()
+        obj.picked_group_fdr_last_started_at = None
+        obj.picked_group_fdr_last_finished_at = None
+        obj.picked_group_fdr_last_status = "requested"
+        obj.picked_group_fdr_last_error = ""
+        obj.picked_group_fdr_last_run_dir = run_dir
+        obj.picked_group_fdr_last_manifest = json.dumps(manifest, sort_keys=True)
+        obj.save(
+            update_fields=[
+                "picked_group_fdr_task_id",
+                "picked_group_fdr_task_submitted_at",
+                "picked_group_fdr_last_started_at",
+                "picked_group_fdr_last_finished_at",
+                "picked_group_fdr_last_status",
+                "picked_group_fdr_last_error",
+                "picked_group_fdr_last_run_dir",
+                "picked_group_fdr_last_manifest",
+            ]
+        )
+        self.message_user(
+            request,
+            f"Queued picked-group-FDR for {len(validation['included_results'])} run(s); "
+            f"{len(validation['excluded_results'])} run(s) excluded.",
+            level=messages.SUCCESS,
+        )
+        logger.info(
+            "[picked_group_fdr] admin queue succeeded pipeline_id=%s task_id=%s run_dir=%s",
+            obj.pk,
+            async_result.id,
+            run_dir,
+        )
+        return HttpResponseRedirect(reverse("admin:maxquant_pipeline_change", args=[obj.pk]))
+
+    def clear_picked_group_fdr_view(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Pipeline not found.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:maxquant_pipeline_changelist"))
+        if obj.picked_group_fdr_is_active:
+            logger.warning(
+                "[picked_group_fdr] admin clear rejected active pipeline_id=%s status=%s",
+                obj.pk,
+                obj.picked_group_fdr_last_status,
+            )
+            self.message_user(
+                request,
+                "Picked-group-FDR status cannot be cleared while queued or running.",
+                level=messages.WARNING,
+            )
+            return HttpResponseRedirect(reverse("admin:maxquant_pipeline_change", args=[obj.pk]))
+
+        obj.picked_group_fdr_task_id = ""
+        obj.picked_group_fdr_task_submitted_at = None
+        obj.picked_group_fdr_last_started_at = None
+        obj.picked_group_fdr_last_finished_at = None
+        obj.picked_group_fdr_last_status = "never_run"
+        obj.picked_group_fdr_last_error = ""
+        obj.picked_group_fdr_last_run_dir = ""
+        obj.picked_group_fdr_last_manifest = ""
+        obj.save(
+            update_fields=[
+                "picked_group_fdr_task_id",
+                "picked_group_fdr_task_submitted_at",
+                "picked_group_fdr_last_started_at",
+                "picked_group_fdr_last_finished_at",
+                "picked_group_fdr_last_status",
+                "picked_group_fdr_last_error",
+                "picked_group_fdr_last_run_dir",
+                "picked_group_fdr_last_manifest",
+            ]
+        )
+        self.message_user(
+            request,
+            "Cleared picked-group-FDR status for this pipeline. Output files were not deleted.",
+            level=messages.SUCCESS,
+        )
+        logger.info(
+            "[picked_group_fdr] admin clear succeeded pipeline_id=%s user=%s",
+            obj.pk,
+            getattr(request.user, "pk", None),
+        )
+        return HttpResponseRedirect(reverse("admin:maxquant_pipeline_change", args=[obj.pk]))
 
 
 class ResultAdmin(admin.ModelAdmin):

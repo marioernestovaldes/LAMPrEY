@@ -41,6 +41,9 @@ from onboarding.bootstrap import DEMO_PIPELINE_NAME
 
 from omics.common import today
 from omics.proteomics.rawtools.plotly import histograms, lines_plot
+from omics.proteomics.maxquant.picked_group_fdr import (
+    filter_protein_groups_with_picked_group_fdr,
+)
 from omics.plotly_tools import plotly_fig_to_div
 
 RESULT_STACK_COLORS = ["#2f86b8", "#66acd5", "#8fc0dd", "#1f5f83"]
@@ -1002,13 +1005,14 @@ class ResultDetailView(LoginRequiredMixin, generic.DetailView):
         if isfile(fn):
             proteins = read_tsv_selected(
                 fn,
-                exact_cols=["Peptides", "Score", "Intensity"],
+                exact_cols=["Majority protein IDs", "Peptides", "Score", "Intensity"],
                 prefix_cols=[
                     "Reporter intensity corrected ",
                     "Reporter intensity ",
                     "Intensity ",
                 ],
             )
+            proteins = filter_protein_groups_with_picked_group_fdr(proteins, path)
             summary_stats.append({"label": "Protein groups", "value": len(proteins)})
 
             if proteins.empty:

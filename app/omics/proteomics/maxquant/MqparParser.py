@@ -1,4 +1,5 @@
 import re
+import xml.etree.ElementTree as ET
 
 
 class MqparParser:
@@ -52,3 +53,28 @@ class MqparParser:
             filename = self._filename
         with open(filename, "w") as file:
             file.write(self._content)
+
+    def _root(self):
+        if self._content is None:
+            raise ValueError("mqpar.xml content has not been loaded")
+        return ET.fromstring(self._content)
+
+    def find_text(self, path, default=None):
+        node = self._root().find(f".//{path}")
+        if node is None or node.text is None:
+            return default
+        text = node.text.strip()
+        return text if text != "" else default
+
+    def findall_text(self, path):
+        return [
+            (node.text or "").strip()
+            for node in self._root().findall(f".//{path}")
+            if (node.text or "").strip() != ""
+        ]
+
+    def find_float(self, path, default=None):
+        value = self.find_text(path, default=None)
+        if value is None:
+            return default
+        return float(value)

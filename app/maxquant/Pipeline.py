@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 
 from django.db import models
 from django_currentuser.db.models import CurrentUserField
@@ -65,6 +66,14 @@ class Pipeline(MaxQuantParameter, FastaFile, RawToolsSetup):
     )
 
     description = models.TextField(max_length=1000, default="")
+    picked_group_fdr_task_id = models.CharField(max_length=255, null=True, blank=True)
+    picked_group_fdr_task_submitted_at = models.DateTimeField(null=True, blank=True)
+    picked_group_fdr_last_started_at = models.DateTimeField(null=True, blank=True)
+    picked_group_fdr_last_finished_at = models.DateTimeField(null=True, blank=True)
+    picked_group_fdr_last_status = models.CharField(max_length=32, default="never_run")
+    picked_group_fdr_last_error = models.TextField(blank=True, default="")
+    picked_group_fdr_last_run_dir = models.CharField(max_length=2000, blank=True, default="")
+    picked_group_fdr_last_manifest = models.TextField(blank=True, default="")
 
     def __str__(self):
         return self.name
@@ -143,6 +152,29 @@ class Pipeline(MaxQuantParameter, FastaFile, RawToolsSetup):
     def n_files(self):
         files = RawFile.objects.filter(pipeline__uuid=self.uuid)
         return len(files)
+
+    @property
+    def picked_group_fdr_root(self):
+        return self.output_path / "picked_group_fdr"
+
+    @property
+    def picked_group_fdr_last_run_path(self):
+        if not self.picked_group_fdr_last_run_dir:
+            return None
+        return self.picked_group_fdr_root / self.picked_group_fdr_last_run_dir
+
+    @property
+    def picked_group_fdr_manifest_data(self):
+        if not self.picked_group_fdr_last_manifest:
+            return {}
+        try:
+            return json.loads(self.picked_group_fdr_last_manifest)
+        except ValueError:
+            return {}
+
+    @property
+    def picked_group_fdr_is_active(self):
+        return self.picked_group_fdr_last_status in {"requested", "running"}
 
 
 @receiver(models.signals.post_save, sender=Pipeline)

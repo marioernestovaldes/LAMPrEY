@@ -41,9 +41,13 @@ from api.views import (
 from maxquant.models import RawFile as RawFileModel
 from maxquant.serializers import PipelineSerializer
 from project.serializers import ProjectsNamesSerializer
+from omics.proteomics.tools import normalize_raw_run_name
 from omics.proteomics.maxquant.quality_control import (
     is_integer_metric_name,
     metric_display_precision,
+)
+from omics.proteomics.maxquant.picked_group_fdr import (
+    filter_protein_groups_with_picked_group_fdr,
 )
 
 
@@ -280,8 +284,14 @@ def get_protein_groups(
             df = df[df[protein_col].isin(protein_names)][["RawFile", protein_col] + selected_cols]
         else:
             if "Reporter intensity corrected" in columns:
-                df = pd.read_parquet(fns[0])
-                intensity_columns = df.filter(regex="Reporter intensity corrected").columns.to_list()
+                intensity_columns = []
+                seen = set()
+                for fn in fns:
+                    df = pd.read_parquet(fn)
+                    for col in df.filter(regex="Reporter intensity corrected").columns.to_list():
+                        if col not in seen:
+                            seen.add(col)
+                            intensity_columns.append(col)
                 columns.remove("Reporter intensity corrected")
                 columns = columns + intensity_columns
             df = get_protein_groups_data(fns, columns=columns, protein_names=protein_names)
@@ -294,15 +304,7 @@ def get_protein_groups(
 
 
 def _normalize_selected_raw_name(value):
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    lowered = text.lower()
-    if lowered in {"none", "nan"}:
-        return None
-    return P(text).stem.lower()
+    return normalize_raw_run_name(value)
 
 
 def _result_matches_raw_file_selection(result, requested_raws):
@@ -380,6 +382,7 @@ def _read_protein_groups_text(result):
     if df.empty:
         return pd.DataFrame()
     df = df.loc[:, ~df.columns.duplicated()].copy()
+    df = filter_protein_groups_with_picked_group_fdr(df, result.output_dir_maxquant)
     df["RawFile"] = P(result.raw_file.logical_name).with_suffix("").name
     df["Project"] = str(result.raw_file.pipeline.project.name)
     df["Pipeline"] = str(result.raw_file.pipeline.name)

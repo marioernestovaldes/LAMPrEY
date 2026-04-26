@@ -28,6 +28,13 @@ from celery import current_app
 
 from omics.proteomics.tools import load_rawtools_data_from, load_maxquant_data_from
 from omics.proteomics.maxquant.MaxquantReader import MaxquantReader, MaxquantParseError
+from omics.proteomics.maxquant.picked_group_fdr import (
+    PICKED_GROUP_FDR_PER_RESULT_PROTEIN_GROUPS,
+    filter_protein_groups_with_picked_group_fdr,
+    latest_successful_picked_group_fdr_file,
+    latest_successful_picked_group_fdr_peptides_file,
+    picked_group_fdr_output_is_newer,
+)
 
 from .tasks import rawtools_metrics, rawtools_qc, run_maxquant
 from .defaults import ensure_bundled_maxquant_installed
@@ -308,6 +315,10 @@ class Result(models.Model):
                 return None
             if df is None:
                 return None
+            if fn == "proteinGroups.txt":
+                df = filter_protein_groups_with_picked_group_fdr(
+                    df, self.output_dir_maxquant
+                )
             df["RawFile"] = str(self.raw_file.name)
             df["Project"] = str(self.raw_file.pipeline.project.name)
             df["Pipeline"] = str(self.raw_file.pipeline.name)
@@ -319,6 +330,42 @@ class Result(models.Model):
             return df
         else:
             return None
+
+    def _protein_quant_source_path(self):
+        derived = self.output_dir_maxquant / PICKED_GROUP_FDR_PER_RESULT_PROTEIN_GROUPS
+        if derived.is_file():
+            return derived
+        return self.output_dir_maxquant / "proteinGroups.txt"
+
+    def _read_protein_quant_source(self):
+        source_path = self._protein_quant_source_path()
+        if source_path.name == "proteinGroups.txt":
+            return self.get_data_from_file("proteinGroups.txt")
+
+        try:
+            df = pd.read_csv(
+                source_path,
+                sep="\t",
+                low_memory=False,
+                na_filter=False,
+                encoding="utf-8-sig",
+            )
+        except Exception as exc:
+            self._record_maxquant_parse_error(source_path, exc)
+            return None
+
+        if df is None or df.empty:
+            return df
+
+        df["RawFile"] = str(self.raw_file.name)
+        df["Project"] = str(self.raw_file.pipeline.project.name)
+        df["Pipeline"] = str(self.raw_file.pipeline.name)
+        df["UseDownstream"] = str(self.raw_file.use_downstream)
+        df["Flagged"] = str(self.raw_file.flagged)
+        df = df.set_index(
+            ["Project", "Pipeline", "RawFile", "UseDownstream", "Flagged"]
+        ).reset_index()
+        return df
 
     @property
     def url(self):
@@ -358,10 +405,20 @@ class Result(models.Model):
 
     @property
     def dashboard_qc_source_paths(self):
-        return [
+        paths = [
             self.output_dir_maxquant / "maxquant_quality_control.csv",
             self.output_dir_rawtools_qc / "QcDataTable.csv",
         ]
+        picked_proteins = latest_successful_picked_group_fdr_file(
+            self.output_dir_maxquant
+        )
+        picked_peptides = latest_successful_picked_group_fdr_peptides_file(
+            self.output_dir_maxquant
+        )
+        for picked_path in [picked_proteins, picked_peptides]:
+            if picked_path is not None:
+                paths.append(P(picked_path))
+        return paths
 
     def dashboard_qc_cache_is_stale(self):
         cache_path = self.dashboard_qc_cache_path
@@ -429,13 +486,21 @@ class Result(models.Model):
         return self.pipeline.parquet_path
 
     def create_protein_quant(self):
-        fn_txt = "proteinGroups.txt"
-        abs_fn_txt = self.output_dir_maxquant / fn_txt
+        abs_fn_txt = self._protein_quant_source_path()
         abs_fn_par = self.protein_quant_fn
-        if not abs_fn_par.is_file():
+        needs_refresh = (
+            abs_fn_par.is_file()
+            and picked_group_fdr_output_is_newer(self.output_dir_maxquant, abs_fn_par)
+        )
+        if abs_fn_par.is_file() and abs_fn_txt.is_file():
+            try:
+                needs_refresh = needs_refresh or abs_fn_txt.stat().st_mtime > abs_fn_par.stat().st_mtime
+            except OSError:
+                pass
+        if (not abs_fn_par.is_file()) or needs_refresh:
             if not abs_fn_par.parent.is_dir():
                 os.makedirs(abs_fn_par.parent)
-            df = self.get_data_from_file("proteinGroups.txt")
+            df = self._read_protein_quant_source()
             # Remove duplicated columns
             # sometimes MaxQuant generates
             # files with repeated column names

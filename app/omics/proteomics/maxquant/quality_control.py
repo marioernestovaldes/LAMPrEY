@@ -9,6 +9,14 @@ from pathlib import Path as P
 from glob import glob
 from os.path import dirname, isdir, isfile, join, abspath
 
+from omics.proteomics.maxquant.picked_group_fdr import (
+    filter_peptides_with_picked_group_fdr,
+    filter_protein_groups_with_picked_group_fdr,
+    filtered_picked_group_fdr_evidence_for_result,
+    latest_successful_picked_group_fdr_file,
+    latest_successful_picked_group_fdr_peptides_file,
+)
+
 summary_columns_v1 = [
     "MS",
     "MS/MS",
@@ -470,6 +478,26 @@ def _cached_qc_is_stale(df):
     return not required_cols.issubset(set(df.columns))
 
 
+def _picked_group_fdr_cache_is_newer(txt_path, cache_path):
+    candidate_paths = [
+        latest_successful_picked_group_fdr_file(txt_path),
+        latest_successful_picked_group_fdr_peptides_file(txt_path),
+    ]
+    try:
+        cache_mtime = P(cache_path).stat().st_mtime
+    except OSError:
+        return False
+    for candidate_path in candidate_paths:
+        if candidate_path is None:
+            continue
+        try:
+            if P(candidate_path).stat().st_mtime > cache_mtime:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def collect_maxquant_qc_data(root_path, force_update=False, from_csvs=True):
     """
     Generate MaxQuant quality control in all
@@ -505,6 +533,24 @@ def maxquant_qc_csv(
         if _cached_qc_is_stale(df):
             logging.info("Regenerating stale MaxQuant QC cache: %s", abs_path)
             df = maxquant_qc(txt_path)
+            if df is not None and out_fn is not None:
+                df = _normalize_metric_dataframe(
+                    df,
+                    precision_overrides=METRIC_PRECISION_OVERRIDES,
+                )
+                df.to_csv(abs_path, index=False)
+        elif _picked_group_fdr_cache_is_newer(txt_path, abs_path):
+            logging.info(
+                "Regenerating MaxQuant QC cache because picked-group-FDR is newer: %s",
+                abs_path,
+            )
+            df = maxquant_qc(txt_path)
+            if df is not None and out_fn is not None:
+                df = _normalize_metric_dataframe(
+                    df,
+                    precision_overrides=METRIC_PRECISION_OVERRIDES,
+                )
+                df.to_csv(abs_path, index=False)
     else:
         df = maxquant_qc(txt_path)
         if df is None:
@@ -569,6 +615,44 @@ def maxquant_qc_summary(txt_path):
         return pd.Series(dtype=object)
     df_summary = df_summary_df.T[0]
 
+    picked_group_peptides_path = latest_successful_picked_group_fdr_peptides_file(txt_path)
+    if picked_group_peptides_path is not None:
+        peptides_df = _read_txt_table(txt_path, "peptides.txt")
+        peptides_df = filter_peptides_with_picked_group_fdr(peptides_df, txt_path)
+        peptide_count = (
+            peptides_df["Sequence"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .replace("", np.nan)
+            .dropna()
+            .nunique()
+            if "Sequence" in peptides_df.columns
+            else 0
+        )
+        if "Peptide Sequences Identified" in df_summary.index:
+            df_summary.loc["Peptide Sequences Identified"] = peptide_count
+        elif "Peptide sequences identified" in df_summary.index:
+            df_summary.loc["Peptide sequences identified"] = peptide_count
+    else:
+        picked_group_evidence = filtered_picked_group_fdr_evidence_for_result(txt_path)
+        if picked_group_evidence is not None and not picked_group_evidence.empty:
+            peptide_count = (
+                picked_group_evidence["Sequence"]
+                .dropna()
+                .astype(str)
+                .str.strip()
+                .replace("", np.nan)
+                .dropna()
+                .nunique()
+                if "Sequence" in picked_group_evidence.columns
+                else 0
+            )
+            if "Peptide Sequences Identified" in df_summary.index:
+                df_summary.loc["Peptide Sequences Identified"] = peptide_count
+            elif "Peptide sequences identified" in df_summary.index:
+                df_summary.loc["Peptide sequences identified"] = peptide_count
+
     if "MS/MS Submitted" in df_summary.index:
         return df_summary[summary_columns_v1]
     elif "MS/MS submitted" in df_summary.index:
@@ -578,6 +662,7 @@ def maxquant_qc_summary(txt_path):
 def maxquant_qc_protein_groups(txt_path, protein=None):
     filename = "proteinGroups.txt"
     df = _read_txt_table(txt_path, filename)
+    df = filter_protein_groups_with_picked_group_fdr(df, txt_path)
     n_contaminants = _safe_eq_plus_count(df, "Potential contaminant")
     n_reverse = _safe_eq_plus_count(df, "Reverse")
     n_true_hits = len(df) - (n_contaminants + n_reverse)
@@ -678,6 +763,21 @@ def maxquant_qc_protein_groups(txt_path, protein=None):
 def maxquant_qc_peptides(txt_path):
     filename = "peptides.txt"
     df = _read_txt_table(txt_path, filename)
+    filtered_df = filter_peptides_with_picked_group_fdr(df, txt_path)
+    if filtered_df is not df:
+        df = filtered_df
+    else:
+        picked_group_evidence = filtered_picked_group_fdr_evidence_for_result(txt_path)
+        if picked_group_evidence is not None and "Sequence" in df.columns:
+            accepted_sequences = {
+                sequence
+                for sequence in picked_group_evidence["Sequence"].dropna().astype(str).str.strip()
+                if sequence
+            }
+            if accepted_sequences:
+                df = df[df["Sequence"].astype(str).isin(accepted_sequences)].copy()
+            else:
+                df = df.iloc[0:0].copy()
     df_identified = _filtered_identifications(df, include_only_identified_by_site=True)
     max_missed_cleavages = 3
     last_amino_acids = ["K", "R"]

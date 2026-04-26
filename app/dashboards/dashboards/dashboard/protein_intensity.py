@@ -12,6 +12,7 @@ from dash.exceptions import PreventUpdate
 
 from dashboards.dashboards.dashboard import config as C
 from dashboards.dashboards.dashboard import tools as T
+from omics.proteomics.tools import normalize_raw_run_name
 
 
 X_AXIS_LABELS = {
@@ -68,6 +69,43 @@ def _highlight_run_keys(scope_data, proposal):
     if proposal.get("scope_sig") != _scope_sig(scope_data):
         return set()
     return {str(key) for key in list(proposal.get("run_keys_to_flag") or []) if key is not None}
+
+
+def _normalize_run_name(value):
+    return normalize_raw_run_name(value)
+
+
+def _merge_axis_metadata(long_df, axis_df):
+    source = long_df.reset_index(drop=True)
+    metadata_cols = [
+        col for col in axis_df.columns if col not in {"RawFile", "RawFileJoin"}
+    ]
+    exact_axis = axis_df.drop(columns=["RawFileJoin"], errors="ignore").drop_duplicates(
+        subset=["RawFile"],
+        keep="first",
+    )
+    merged = source.merge(exact_axis, on="RawFile", how="left", validate="many_to_one")
+
+    exact_raw_files = set(exact_axis["RawFile"].astype(str))
+    unmatched = ~merged["RawFile"].astype(str).isin(exact_raw_files)
+    if unmatched.any():
+        fallback_axis = (
+            axis_df.drop(columns=["RawFile"], errors="ignore")
+            .dropna(subset=["RawFileJoin"])
+            .drop_duplicates(subset=["RawFileJoin"], keep="first")
+        )
+        fallback = (
+            source.loc[unmatched, ["RawFileJoin"]]
+            .reset_index()
+            .merge(fallback_axis, on="RawFileJoin", how="left", validate="many_to_one")
+            .set_index("index")
+        )
+        for col in metadata_cols:
+            merged.loc[unmatched, col] = fallback[col]
+
+    if "RawFileLabel" not in merged.columns:
+        merged["RawFileLabel"] = merged["RawFile"]
+    return merged
 
 
 PROTEIN_METRICS = {
@@ -413,6 +451,7 @@ def callbacks(app):
 
         axis_df = scope_df[["RawFile", "Index", "DateAcquired", "run_key", "Flagged"]].copy()
         axis_df["RawFileLabel"] = axis_df["RawFile"]
+        axis_df["RawFileJoin"] = axis_df["RawFile"].map(_normalize_run_name)
         x_axis = x_axis if x_axis in X_AXIS_LABELS else "Index"
         metric_is_intensity = metric_key == "Reporter intensity corrected"
 
@@ -432,7 +471,8 @@ def callbacks(app):
                 value_name="Intensity",
             )
             long_df["RawFile"] = long_df["RawFile"].astype(str)
-            long_df["Intensity"] = pd.to_numeric(long_df["Intensity"], errors="coerce").fillna(0)
+            long_df["Intensity"] = pd.to_numeric(long_df["Intensity"], errors="coerce")
+            long_df = long_df.dropna(subset=["Intensity"])
             long_df["MetricValue"] = np.log2(long_df["Intensity"] + 1.0)
             long_df["Channel"] = (
                 long_df["Channel"]
@@ -440,11 +480,15 @@ def callbacks(app):
                 .str.replace("Reporter intensity corrected ", "", regex=False)
                 .str.strip()
             )
-            long_df["ChannelNo"] = pd.to_numeric(long_df["Channel"], errors="coerce")
+            long_df["ChannelNo"] = pd.to_numeric(
+                long_df["Channel"].str.extract(r"^(\d+)")[0],
+                errors="coerce",
+            )
             long_df = long_df[long_df["RawFile"].isin(raw_files)]
             if long_df.empty:
                 return go.Figure(), config, hidden_style, "No reporter intensity records match the selected samples.", {"display": "flex"}, None
-            long_df = long_df.merge(axis_df, on="RawFile", how="left")
+            long_df["RawFileJoin"] = long_df["RawFile"].map(_normalize_run_name)
+            long_df = _merge_axis_metadata(long_df, axis_df)
         else:
             if metric_key not in data_df.columns:
                 return go.Figure(), config, hidden_style, metric_spec["empty_message"], {"display": "flex"}, None
@@ -455,7 +499,8 @@ def callbacks(app):
             long_df = long_df[long_df["RawFile"].isin(raw_files)]
             if long_df.empty:
                 return go.Figure(), config, hidden_style, metric_spec["empty_message"], {"display": "flex"}, None
-            long_df = long_df.merge(axis_df, on="RawFile", how="left")
+            long_df["RawFileJoin"] = long_df["RawFile"].map(_normalize_run_name)
+            long_df = _merge_axis_metadata(long_df, axis_df)
 
         if len(proteins) == 1:
             protein_name = proteins[0]
@@ -467,14 +512,18 @@ def callbacks(app):
             run_order = {raw: idx for idx, raw in enumerate(raw_files)}
             single["run_idx"] = single["RawFile"].map(run_order)
 
-            def _sample_axis_label(row):
+            def _sample_labels(frame):
                 if axis_mode == "RawFile":
-                    return str(row.get("RawFileLabel", "Sample"))
+                    return frame["RawFileLabel"].astype(str)
                 if axis_mode == "DateAcquired":
-                    dt = pd.to_datetime(row.get("DateAcquired"), errors="coerce")
-                    if pd.notna(dt):
-                        return dt.strftime("%Y-%m-%d")
-                return f"Sample {int(row.get('run_idx', 0)) + 1}"
+                    dt = pd.to_datetime(frame["DateAcquired"], errors="coerce")
+                    fallback = "Sample " + (
+                        frame["run_idx"].fillna(0).astype(int) + 1
+                    ).astype(str)
+                    return dt.dt.strftime("%Y-%m-%d").fillna(fallback)
+                return "Sample " + (
+                    frame["run_idx"].fillna(0).astype(int) + 1
+                ).astype(str)
 
             if metric_is_intensity:
                 single = (
@@ -491,16 +540,21 @@ def callbacks(app):
                             "Flagged",
                         ],
                         as_index=False,
+                        dropna=False,
                     )[["Intensity", "MetricValue"]]
                     .median()
                 )
+                if single.empty:
+                    return go.Figure(), config, hidden_style, f"The selected protein has no {metric_spec['label'].lower()} values in this scope.", {"display": "flex"}, None
                 single = single.sort_values(["run_idx", "ChannelNo"], na_position="last").reset_index(drop=True)
-                single["sample_label"] = single.apply(_sample_axis_label, axis=1)
-                single["x_label"] = single.apply(
-                    lambda row: f"{row['RawFile']} / TMT{int(row['ChannelNo'])}"
-                    if pd.notna(row["ChannelNo"])
-                    else f"{row['RawFile']} / {row['Channel']}",
-                    axis=1,
+                single["sample_label"] = _sample_labels(single)
+                channel_labels = single["ChannelNo"].apply(
+                    lambda value: f"TMT{int(value)}" if pd.notna(value) else None
+                )
+                single["x_label"] = np.where(
+                    channel_labels.notna(),
+                    single["RawFile"].astype(str) + " / " + channel_labels.astype(str),
+                    single["RawFile"].astype(str) + " / " + single["Channel"].astype(str),
                 )
                 single["x_pos"] = np.arange(1, len(single) + 1, dtype=int)
                 sample_tick_df = (
@@ -536,11 +590,14 @@ def callbacks(app):
                             "Flagged",
                         ],
                         as_index=False,
+                        dropna=False,
                     )["MetricValue"]
                     .median()
                 )
+                if single.empty:
+                    return go.Figure(), config, hidden_style, f"The selected protein has no {metric_spec['label'].lower()} values in this scope.", {"display": "flex"}, None
                 single = single.sort_values("run_idx", na_position="last").reset_index(drop=True)
-                single["sample_label"] = single.apply(_sample_axis_label, axis=1)
+                single["sample_label"] = _sample_labels(single)
                 single["x_label"] = single["RawFileLabel"].astype(str)
                 single["x_pos"] = np.arange(1, len(single) + 1, dtype=int)
                 sample_tick_df = single[["x_pos", "sample_label"]].copy()
