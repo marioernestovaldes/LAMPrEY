@@ -452,6 +452,7 @@ def callbacks(app):
         axis_df = scope_df[["RawFile", "Index", "DateAcquired", "run_key", "Flagged"]].copy()
         axis_df["RawFileLabel"] = axis_df["RawFile"]
         axis_df["RawFileJoin"] = axis_df["RawFile"].map(_normalize_run_name)
+        raw_file_join_keys = set(axis_df["RawFileJoin"].dropna().astype(str))
         x_axis = x_axis if x_axis in X_AXIS_LABELS else "Index"
         metric_is_intensity = metric_key == "Reporter intensity corrected"
 
@@ -484,10 +485,10 @@ def callbacks(app):
                 long_df["Channel"].str.extract(r"^(\d+)")[0],
                 errors="coerce",
             )
-            long_df = long_df[long_df["RawFile"].isin(raw_files)]
+            long_df["RawFileJoin"] = long_df["RawFile"].map(_normalize_run_name)
+            long_df = long_df[long_df["RawFileJoin"].isin(raw_file_join_keys)]
             if long_df.empty:
                 return go.Figure(), config, hidden_style, "No reporter intensity records match the selected samples.", {"display": "flex"}, None
-            long_df["RawFileJoin"] = long_df["RawFile"].map(_normalize_run_name)
             long_df = _merge_axis_metadata(long_df, axis_df)
         else:
             if metric_key not in data_df.columns:
@@ -496,10 +497,10 @@ def callbacks(app):
             long_df["RawFile"] = long_df["RawFile"].astype(str)
             long_df["MetricValue"] = pd.to_numeric(long_df[metric_key], errors="coerce")
             long_df = long_df.dropna(subset=["MetricValue"])
-            long_df = long_df[long_df["RawFile"].isin(raw_files)]
+            long_df["RawFileJoin"] = long_df["RawFile"].map(_normalize_run_name)
+            long_df = long_df[long_df["RawFileJoin"].isin(raw_file_join_keys)]
             if long_df.empty:
                 return go.Figure(), config, hidden_style, metric_spec["empty_message"], {"display": "flex"}, None
-            long_df["RawFileJoin"] = long_df["RawFile"].map(_normalize_run_name)
             long_df = _merge_axis_metadata(long_df, axis_df)
 
         if len(proteins) == 1:
