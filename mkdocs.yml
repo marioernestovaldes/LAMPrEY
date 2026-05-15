@@ -1,4 +1,6 @@
 site_name: LAMPrEY Documentation
+site_url: https://lewisresearchgroup.github.io/LAMPrEY/
+site_description: Documentation for LAMPrEY, a quality-control server for large-scale quantitative proteomics workflows.
 nav:
     - Home: index.md
     - Getting Started:
