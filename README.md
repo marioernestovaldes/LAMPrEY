@@ -4,6 +4,10 @@
 [![Ask DeepWiki About this App](https://deepwiki.com/badge.svg)](https://deepwiki.com/LewisResearchGroup/LAMPrEY)
 [![Issue tracking](https://img.shields.io/badge/Issue_tracking-GitHub-blue)](https://github.com/LewisResearchGroup/LAMPrEY/issues)
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/LewisResearchGroup/ms-mint-app2/main/docs/image/LAMPrEY.png" alt="LAMPrEY Logo" width="400">
+</p>
+
 # LAMPrEY
 
 LAMPrEY (**L**arge-scale **A**utomated **M**ulti-level **Pr**oteomics **E**valuation by P**y**thon) is a Docker-based quality control pipeline server for quantitative proteomics. It is designed for laboratories that want to organize proteomics pipelines, process RAW files automatically, and review QC results through a web interface.
