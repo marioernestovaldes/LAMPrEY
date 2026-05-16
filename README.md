@@ -5,7 +5,7 @@
 [![Issue tracking](https://img.shields.io/badge/Issue_tracking-GitHub-blue)](https://github.com/LewisResearchGroup/LAMPrEY/issues)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/LewisResearchGroup/ms-mint-app2/main/docs/image/LAMPrEY.png" alt="LAMPrEY Logo" width="400">
+  <img src="https://raw.githubusercontent.com/LewisResearchGroup/LAMPrEY/main/docs/image/LAMPrEY.png" alt="LAMPrEY Logo" width="400">
 </p>
 
 # LAMPrEY
