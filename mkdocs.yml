@@ -19,6 +19,7 @@ nav:
         - Dashboard: dashboard.md
     - System:
         - Datalake: datalake.md
+        - Deployment notes: deployment-notes.md
         - RawTools: rawtools.md
         - MaxQuant: maxquant.md
     - Resources:
